@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>코인주라 위젯</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app" id="app">
+
+<div class="titlebar" data-tauri-drag-region>
+  <span class="brand" data-tauri-drag-region>코인주라</span>
+  <button class="tbtn" id="pinBtn" title="항상 위">◆</button>
+  <button class="tbtn" id="opaBtn" title="투명도">◐</button>
+  <button class="tbtn close" id="closeBtn" title="트레이로 숨기기">×</button>
+</div>
+
+<div class="body">
+
+<!-- ================= WIDGET ================= -->
+<div class="page on" id="main">
+  <div class="wtop">
+    <div class="exbtns" id="exbtns"></div>
+    <button class="gear" id="toSettings" title="설정">⚙</button>
+    <div class="live"><span class="dot" id="dot"></span></div>
+  </div>
+  <div class="lhead" id="lhead"></div>
+  <div class="rows" id="rows"><div class="empty">불러오는 중…</div></div>
+  <div class="wfoot">코인주라 · 약 2분 지연 · 투자 참고용</div>
+</div>
+
+<!-- ================= SETTINGS ================= -->
+<div class="page" id="settings">
+  <div class="stop">
+    <button class="back" id="toMain">‹</button>
+    <h2>설정</h2>
+  </div>
+
+  <div class="sec">
+    <h3>거래소</h3>
+    <div class="chips" id="exChips"></div>
+  </div>
+
+  <div class="sec">
+    <h3>표시 항목</h3>
+    <div class="chips" id="colChips"></div>
+  </div>
+
+  <div class="sec">
+    <h3>급변동 알림 (24h 변동률)</h3>
+    <div class="chips" id="alertChips"></div>
+  </div>
+
+  <div class="sec">
+    <h3>코인 선택</h3>
+    <input class="search" id="coinSearch" placeholder="심볼·이름 검색 (예: BTC, 비트코인)">
+    <div class="picked" id="picked"></div>
+    <div class="plist" id="plist"></div>
+    <div class="hint">선택한 순서대로 위젯에 표시됩니다. 항목을 눌러 추가·해제하세요.</div>
+  </div>
+
+  <div class="savebar">
+    <button class="savebtn" id="save">저장하고 위젯으로</button>
+  </div>
+</div>
+
+</div><!-- /.body -->
+
+<div class="rz w"  data-rz="West"></div>
+<div class="rz e"  data-rz="East"></div>
+<div class="rz s"  data-rz="South"></div>
+<div class="rz sw" data-rz="SouthWest"></div>
+<div class="rz se" data-rz="SouthEast"></div>
+</div><!-- /.app -->
+
+<script src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+[package]
+name = "coinjura-widget"
+version = "0.1.0"
+description = "코인주라 시세 위젯"
+authors = ["coinjura"]
+edition = "2021"
+
+[lib]
+name = "coinjura_widget_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
+tauri-plugin-opener = "2"
+tauri-plugin-http = { version = "2", features = ["gzip"] }
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
