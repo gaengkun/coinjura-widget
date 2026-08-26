@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "코인주라 위젯",
-  "version": "0.1.0",
+  "productName": "Coinjura Widget",
+  "version": "0.1.1",
   "identifier": "com.coinjura.widget",
   "build": {
     "frontendDist": "../src"
