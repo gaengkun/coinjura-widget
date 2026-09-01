@@ -9,11 +9,14 @@
 <body>
 <div class="app" id="app">
 
-<div class="titlebar" data-tauri-drag-region>
-  <span class="brand" data-tauri-drag-region>코인주라</span>
-  <button class="tbtn" id="pinBtn" title="항상 위">◆</button>
-  <button class="tbtn" id="opaBtn" title="투명도">◐</button>
-  <button class="tbtn close" id="closeBtn" title="트레이로 숨기기">×</button>
+<div class="titlebar" id="titlebar">
+  <span class="brand">코인주라</span>
+  <button class="tbtn" id="pinBtn" data-tip="항상 위에 고정">
+    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+      <path fill="currentColor" d="M9.6 1.2a1 1 0 0 1 1.4 0l3.8 3.8a1 1 0 0 1 0 1.4l-.5.5a1 1 0 0 1-1.1.2l-1.5-.6-2.6 2.6.4 1.8a1 1 0 0 1-.3.9l-.6.6a1 1 0 0 1-1.4 0L4.6 9.9l-3 3a.7.7 0 1 1-1-1l3-3-2.5-2.6a1 1 0 0 1 0-1.4l.6-.6a1 1 0 0 1 .9-.3l1.8.4 2.6-2.6-.6-1.5a1 1 0 0 1 .2-1.1z"/>
+    </svg>
+  </button>
+  <button class="tbtn close" id="closeBtn" data-tip="트레이로 숨기기">×</button>
 </div>
 
 <div class="body">
@@ -22,7 +25,7 @@
 <div class="page on" id="main">
   <div class="wtop">
     <div class="exbtns" id="exbtns"></div>
-    <button class="gear" id="toSettings" title="설정">⚙</button>
+    <button class="gear" id="toSettings" data-tip="설정">⚙</button>
     <div class="live"><span class="dot" id="dot"></span></div>
   </div>
   <div class="lhead" id="lhead"></div>
@@ -38,6 +41,50 @@
   </div>
 
   <div class="sec">
+    <h3>창</h3>
+    <div class="frow">
+      <label class="flabel">투명도</label>
+      <div class="fctl">
+        <input type="range" class="rng" id="opaRange" min="5" max="100" step="1">
+        <div class="numwrap"><input type="number" class="num" id="opaNum" min="5" max="100" step="1"><span class="unit">%</span></div>
+      </div>
+    </div>
+    <div class="hint">마우스를 올리면 잠시 원래 밝기로 돌아옵니다. 최소 5%.</div>
+
+    <div class="frow" style="margin-top:9px">
+      <label class="flabel">레이어</label>
+      <div class="fctl">
+        <div class="seg" id="layerSeg">
+          <button data-layer="top">항상 위</button>
+          <button data-layer="normal">일반</button>
+          <button data-layer="bottom">항상 뒤</button>
+        </div>
+      </div>
+    </div>
+    <div class="hint">전체화면 앱(화면 공유·발표)이 감지되면 자동으로 '일반'으로 내려갑니다.</div>
+
+    <div class="frow" style="margin-top:9px">
+      <label class="flabel">가장자리 자석</label>
+      <div class="fctl">
+        <label class="sw"><input type="checkbox" id="snapChk"><span></span></label>
+        <span class="swtx">화면 끝에 붙이고, 더 밀면 숨김</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h3>단축키</h3>
+    <div class="frow">
+      <label class="flabel">보이기/숨기기</label>
+      <div class="fctl">
+        <input class="hk" id="hkInput" readonly placeholder="여기를 클릭하고 키를 누르세요">
+        <button class="mini" id="hkClear">해제</button>
+      </div>
+    </div>
+    <div class="hint" id="hkMsg">Ctrl·Alt·Cmd 중 하나는 반드시 포함해야 합니다.</div>
+  </div>
+
+  <div class="sec">
     <h3>거래소</h3>
     <div class="chips" id="exChips"></div>
   </div>
@@ -48,8 +95,23 @@
   </div>
 
   <div class="sec">
-    <h3>급변동 알림 (24h 변동률)</h3>
-    <div class="chips" id="alertChips"></div>
+    <h3>급등락 표시</h3>
+    <div class="frow">
+      <label class="flabel">단위</label>
+      <div class="fctl"><div class="chips" id="alertChips"></div></div>
+    </div>
+    <div class="frow" style="margin-top:8px">
+      <label class="flabel">기준 시간</label>
+      <div class="fctl"><div class="chips" id="winChips"></div></div>
+    </div>
+    <div class="frow" style="margin-top:8px">
+      <label class="flabel">소리</label>
+      <div class="fctl">
+        <label class="sw"><input type="checkbox" id="soundChk"><span></span></label>
+        <span class="swtx">짧은 알림음</span>
+      </div>
+    </div>
+    <div class="hint">위젯을 숨긴 상태에서 설정한 단위만큼 움직이면 트레이에 작게 표시됩니다. 창을 강제로 띄우지 않습니다.</div>
   </div>
 
   <div class="sec">

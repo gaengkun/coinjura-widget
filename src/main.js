@@ -1,7 +1,7 @@
-const P="https://coinjura.com/theme/basic/api/json-proxy.php?f=toplist%2F";
-const API_KR=P+"top500-all.json";
-const API_GL=P+"top500-all-en.json";
-const API_KP=P+"top500-kimchi.json";
+// 서버가 만든 컴팩트 파일 하나만 받는다. 김프까지 서버에서 계산돼 들어 있다.
+// 항목: [심볼, 이름, 국내ex, 원화가, 24h, 1h, 해외ex, 달러가, 24h, 1h, 김프%]
+// 시총 내림차순 정렬 상태로 온다.
+const API="https://coinjura.com/theme/basic/live/widget-v1.js";
 const REFRESH=120000;
 
 /* ---- Tauri bridge (앱에서는 http 플러그인으로 CORS 우회, 브라우저에서는 일반 fetch) ---- */
@@ -9,106 +9,79 @@ const T=window.__TAURI__;
 const IS_APP=!!T;
 const cjFetch=(T&&T.http&&T.http.fetch)?T.http.fetch:window.fetch.bind(window);
 const getJSON=u=>cjFetch(u,{cache:"no-store"}).then(r=>r.json());
-const EX_NAME={U:"업비트",B:"빗썸",BN:"바이낸스",BY:"바이비트"};
-const EX_CUR ={U:"KRW",B:"KRW",BN:"USD",BY:"USD"};
+// 소스가 코인당 국내 대표 1곳·해외 대표 1곳만 담는다(코인주라 시세 정책).
+// 거래소를 직접 고르는 게 아니라 국내/해외를 고르고, 실제 거래소는 행에 표시한다.
+const EX_NAME={KR:"국내",GL:"해외"};
+const EX_CUR ={KR:"KRW",GL:"USD"};
+const EX_LABEL={U:"업비트",B:"빗썸",BN:"바이낸스",BY:"바이비트"};
+const EX_MIGRATE={U:"KR",B:"KR",BN:"GL",BY:"GL"};   // 예전 설정 이관용
 const COLS=[["tkr","티커"],["name","코인명"],["price","시세"],["chg","변동률"],["kimp","김프"]];
 
-// 코인 한글명 (주요 코인 매핑; 없으면 심볼 표시)
-const KO={BTC:"비트코인",ETH:"이더리움",XRP:"리플",SOL:"솔라나",ADA:"에이다",DOGE:"도지코인",
-  TRX:"트론",LINK:"체인링크",BCH:"비트코인캐시",AVAX:"아발란체",DOT:"폴카닷",MATIC:"폴리곤",
-  POL:"폴리곤",ATOM:"코스모스",LTC:"라이트코인",NEAR:"니어",APT:"앱토스",ARB:"아비트럼",
-  OP:"옵티미즘",SUI:"수이",SEI:"세이",TIA:"셀레스티아",INJ:"인젝티브",STX:"스택스",
-  HBAR:"헤데라",XLM:"스텔라루멘",ETC:"이더리움클래식",FIL:"파일코인",ICP:"인터넷컴퓨터",
-  RENDER:"렌더토큰",IMX:"이뮤터블",GRT:"더그래프",SAND:"샌드박스",MANA:"디센트럴랜드",
-  AAVE:"에이브",UNI:"유니스왑",MKR:"메이커",PEPE:"페페",SHIB:"시바이누",WIF:"도지위프햇",
-  BONK:"봉크",FLOKI:"플로키",TON:"톤코인",KAIA:"카이아",PENGU:"펏지펭귄"};
 
 // ---- default settings ----
-const DEFAULT={ ex:["U","B"], cols:["tkr","name","price","chg","kimp"], coins:["BTC","XRP","SOL"], alert:0 };
-const ALERTS=[[0,"끄기"],[5,"±5%"],[10,"±10%"],[20,"±20%"]];
+const DEFAULT={ ex:["KR","GL"], cols:["tkr","name","price","chg","kimp"], coins:["BTC","XRP","SOL"],
+                alert:0, win:"10m", sound:false };
+// 단위 = 발동 임계값이자 갱신 단위. 2% 선택 시 2,4,6,8…에서 표시가 바뀐다.
+const ALERTS=[[0,"끄기"],[1,"1%"],[2,"2%"],[3,"3%"],[4,"4%"],[5,"5%"]];
+const WINS=[["2m","2분"],["10m","10분"],["1h","1시간"],["24h","24시간"]];
 function loadCfg(){
-  try{ const c=JSON.parse(localStorage.getItem("cj_widget")); if(c&&c.coins) return c; }catch(e){}
+  try{
+    const c=JSON.parse(localStorage.getItem("cj_widget"));
+    if(c&&c.coins){
+      // 거래소 4종을 쓰던 예전 설정 → 국내/해외로 이관
+      if(Array.isArray(c.ex) && c.ex.some(e=>EX_MIGRATE[e])){
+        c.ex=[...new Set(c.ex.map(e=>EX_MIGRATE[e]||e))].filter(e=>EX_NAME[e]);
+        if(!c.ex.length) c.ex=["KR","GL"];
+        delete c._sel;
+      }
+      return c;
+    }
+  }catch(e){}
   return JSON.parse(JSON.stringify(DEFAULT));
 }
 function saveCfg(c){ try{ localStorage.setItem("cj_widget",JSON.stringify(c)); }catch(e){} }
 
 let cfg=loadCfg();
 let draft=JSON.parse(JSON.stringify(cfg));  // 설정 페이지 편집용
-const data={ kr:[], gl:[], scKrw:1e6, scUsd:1e8, all:[], rate:0, names:{}, cgid:{}, rep:{} };
+const data={ map:{}, all:[], rate:0, t:0 };
 const $=s=>document.querySelector(s);
 
 /* ---------- fetch ---------- */
 async function load(){
   try{
-    const [rk,rg,rp]=await Promise.all([
-      getJSON(API_KR),
-      getJSON(API_GL),
-      getJSON(API_KP).catch(()=>null)
-    ]);
-    data.scKrw=rk.meta?.sc?.krw||1e6;
-    data.scUsd=rg.meta?.sc?.usd||1e8;
-    data.kr=rk.items||[]; data.gl=rg.items||[];
-    if(rp){
-      data.rate=rp.usdkrw_rate||0;
-      (rp.items||[]).forEach(x=>{
-        if(!x.symbol) return;
-        if(x.name) data.names[x.symbol]=x.name;
-        const id=x.cgid||x.cg_id; if(id) data.cgid[x.symbol]=id;      // 티커 충돌 시 코인 확정용
-        data.rep[x.symbol]={kr:x.kr_ex,gl:x.gl_ex};                   // 사이트 대표 거래소
-      });
-    }
-    buildAllCoins();
+    const d=await getJSON(API);
+    data.rate=d.r||0;
+    data.t=d.t||0;
+    const map={}, all=[];
+    (d.i||[]).forEach(x=>{ map[x[0]]=x; all.push({s:x[0],name:x[1]}); });
+    data.map=map;
+    data.all=all;   // 파일이 이미 시총 내림차순이므로 그대로 쓴다
     $("#dot").className="dot on";
     render(); if($("#settings").classList.contains("on")) renderPicker();
     checkAlerts();
   }catch(e){
     $("#dot").className="dot err";
-    if(!data.kr.length) $("#rows").innerHTML='<div class="empty">데이터를 불러오지 못했습니다.</div>';
+    if(!Object.keys(data.map).length) $("#rows").innerHTML='<div class="empty">데이터를 불러오지 못했습니다.</div>';
   }
 }
 
-// 전체 코인 목록(심볼 유니크) — 코인 선택기용
-function nameOf(s){ return data.names[s]||KO[s]||s; }
-function buildAllCoins(){
-  const seen={};
-  [...data.kr,...data.gl].forEach(x=>{
-    if(!seen[x.s]) seen[x.s]={s:x.s, name:nameOf(x.s)};
-  });
-  data.all=Object.values(seen).sort((a,b)=>a.s.localeCompare(b.s));
-}
+function nameOf(s){ const x=data.map[s]; return (x&&x[1])||s; }
 
-/* ---------- lookup one coin on one exchange ---------- */
-function quote(sym,ex,strict){
-  const arr = (ex==="U"||ex==="B") ? data.kr : data.gl;
-  const sc  = (ex==="U"||ex==="B") ? data.scKrw : data.scUsd;
-  const want= data.cgid[sym]||null;
-  let best=null, rank=-1;
-  arr.forEach(x=>{
-    if(x.s!==sym||x.ex!==ex) return;
-    // 2=대표 코인 일치, 1=다른 코인(같은 티커), 0=미매핑
-    const r=(want&&x.cgid===want)?2:(x.cgid==null?0:1);
-    if(strict&&want&&r!==2) return;
-    if(r>rank){ best=x; rank=r; }
-  });
-  if(!best) return null;
-  return { price:best.p/sc, c24:best.c24, cur:EX_CUR[ex] };
+/* ---------- lookup ---------- */
+// 항목 인덱스: 0 심볼 1 이름 2 국내ex 3 원화가 4 24h 5 1h 6 해외ex 7 달러가 8 24h 9 1h 10 김프
+function quote(sym,ex){
+  const x=data.map[sym]; if(!x) return null;
+  const k=(ex==="KR");
+  const price=k?x[3]:x[7];
+  if(!price) return null;
+  return { price, c24:k?x[4]:x[8], c1h:k?x[5]:x[9], cur:EX_CUR[ex], ex:k?x[2]:x[6] };
 }
 
 /* ---------- kimchi premium ---------- */
-// 김프 비교용 상대편 시세: 사이트 대표 거래소 → 나머지 순, 코인 일치(strict) 필수
-function bestKrw(sym){ const r=data.rep[sym];
-  return (r&&r.kr&&quote(sym,r.kr,1))||quote(sym,"U",1)||quote(sym,"B",1); }
-function bestUsd(sym){ const r=data.rep[sym];
-  return (r&&r.gl&&quote(sym,r.gl,1))||quote(sym,"BN",1)||quote(sym,"BY",1); }
-function kimp(sym,ex){
-  if(!data.rate) return null;
-  const isKrw=(ex==="U"||ex==="B");
-  const k=isKrw?quote(sym,ex,1):bestKrw(sym);
-  const g=isKrw?bestUsd(sym):quote(sym,ex,1);
-  if(!k||!g||!g.price) return null;
-  const conv=g.price*data.rate;
-  if(!conv) return null;
-  return (k.price-conv)/conv*100;
+// 서버가 계산해 보낸 값을 그대로 쓴다. 0은 미산출(한쪽 미상장 또는 티커 충돌).
+function kimp(sym){
+  const x=data.map[sym];
+  return (x && x[10]) ? x[10] : null;
 }
 function kimpTxt(v){ if(v==null)return"—"; return (v>0?"+":"")+v.toFixed(2)+"%"; }
 
@@ -121,42 +94,100 @@ function fmtPx(v,cur){
 function cls(v){ return v>0?"up":v<0?"down":"flat"; }
 function chgTxt(v){ if(v==null)return"—"; return (v>0?"+":"")+v.toFixed(2)+"%"; }
 
-/* ---------- 급변동 알림 ---------- */
-const ALERT_COOLDOWN=6*3600*1000;   // 같은 코인·같은 방향은 6시간에 한 번만
-let alertLog={};
-try{ alertLog=JSON.parse(localStorage.getItem("cj_widget_alert"))||{}; }catch(e){}
-let notifyReady=null;
+/* ---------- 급등락 표시 (트레이) ----------
+   API가 과거 시세를 주지 않아(현재 스냅샷 + c24만 제공) 15분·1시간 기준은
+   2분 폴링으로 직접 히스토리를 쌓아 계산한다. localStorage에 저장해 재시작을 견딘다.
+   히스토리가 부족하면 표시하지 않는다(24시간 기준은 c24를 그대로 사용). */
+const WIN_MS={"2m":12e4,"10m":6e5,"1h":36e5,"24h":864e5};
+const HIST_KEEP=75*60*1000;     // 1시간 창 + 여유
+const SNAP_PX=20, PUSH_PX=12, PEEK_PX=28;
 
-async function ensureNotify(){
-  if(!IS_APP||!T.notification) return false;
-  if(notifyReady!==null) return notifyReady;
+let hist={};
+try{ hist=JSON.parse(localStorage.getItem("cj_widget_hist"))||{}; }catch(e){}
+let steps={};
+try{ steps=JSON.parse(localStorage.getItem("cj_widget_steps"))||{}; }catch(e){}
+
+function pushHist(sym,ex,price){
+  const k=sym+"@"+ex, now=Date.now();
+  const a=hist[k]||(hist[k]=[]);
+  a.push([now,price]);
+  // 오래된 표본 정리
+  while(a.length && now-a[0][0]>HIST_KEEP) a.shift();
+}
+function saveHist(){
+  try{ localStorage.setItem("cj_widget_hist",JSON.stringify(hist)); }catch(e){}
+}
+// 창 기준 변동률. 기준 시점 표본이 없으면 null.
+function pctOver(sym,ex,win){
+  const q=quote(sym,ex); if(!q) return null;
+  if(win==="24h") return q.c24;
+  // API가 1시간 변동률(c1h)을 직접 준다 — 히스토리를 쌓을 필요가 없다(제공률 93%).
+  // 없는 코인만 아래 롤링 버퍼로 폴백한다.
+  if(win==="1h" && q.c1h!=null) return q.c1h;
+  const a=hist[sym+"@"+ex]; if(!a||a.length<2) return null;
+  const target=Date.now()-WIN_MS[win];
+  let best=null,bd=Infinity;
+  for(const [ts,p] of a){ const d=Math.abs(ts-target); if(d<bd){bd=d;best=p;} }
+  // 기준 시점에서 너무 벗어난 표본이면 신뢰하지 않는다
+  // 짧은 창은 비율 오차가 너무 빡빡하다 — 데이터 주기가 2분이라 최소 60초는 허용한다
+  if(best==null||!best||bd>Math.max(6e4,WIN_MS[win]*0.35)) return null;
+  return (q.price-best)/best*100;
+}
+// 단위 내림 + 데드밴드(경계에서 표시가 깜빡이는 것 방지)
+function stepOf(pct,unit,prev){
+  const s=Math.floor(Math.abs(pct)/unit)*(pct<0?-1:1);
+  if(prev==null) return s;
+  if(Math.abs(s)>Math.abs(prev)||Math.sign(s)!==Math.sign(prev)) return s;
+  // 내려갈 때는 단위의 30%만큼 더 떨어져야 강등
+  const hold=(Math.abs(prev)*unit)-unit*0.3;
+  return Math.abs(pct)>=hold?prev:s;
+}
+let beepCtx=null;
+function beep(){
+  if(!cfg.sound) return;
   try{
-    let ok=await T.notification.isPermissionGranted();
-    if(!ok) ok=(await T.notification.requestPermission())==="granted";
-    notifyReady=ok;
-  }catch(e){ notifyReady=false; }
-  return notifyReady;
+    beepCtx=beepCtx||new (window.AudioContext||window.webkitAudioContext)();
+    const o=beepCtx.createOscillator(), g=beepCtx.createGain(), t=beepCtx.currentTime;
+    o.frequency.value=880; o.type="sine";
+    g.gain.setValueAtTime(.0001,t);
+    g.gain.exponentialRampToValueAtTime(.12,t+.01);
+    g.gain.exponentialRampToValueAtTime(.0001,t+.09);   // 약 90ms, 짧게
+    o.connect(g); g.connect(beepCtx.destination); o.start(t); o.stop(t+.1);
+  }catch(e){}
 }
 async function checkAlerts(){
-  const th=cfg.alert||0;
-  if(!th || !(await ensureNotify())) return;
+  const unit=cfg.alert||0;
   const ex=activeEx(); if(!ex) return;
-  const now=Date.now(); let dirty=false;
+  for(const sym of cfg.coins){ const q=quote(sym,ex); if(q) pushHist(sym,ex,q.price); }
+  saveHist();
+  if(!unit){ setTray(""); return; }
+
+  const hits=[]; let rang=false, dirty=false;
   for(const sym of cfg.coins){
-    const q=quote(sym,ex); if(!q||q.c24==null) continue;
-    if(Math.abs(q.c24)<th) continue;
-    const dir=q.c24>0?"up":"down";
-    const key=sym+":"+dir;
-    if(alertLog[key] && now-alertLog[key]<ALERT_COOLDOWN) continue;
-    alertLog[key]=now; dirty=true;
-    try{
-      T.notification.sendNotification({
-        title:`${nameOf(sym)} ${dir==="up"?"급등":"급락"} ${chgTxt(q.c24)}`,
-        body:`${EX_NAME[ex]} ${fmtPx(q.price,q.cur)}`
-      });
-    }catch(e){}
+    const pct=pctOver(sym,ex,cfg.win||"1h");
+    if(pct==null) continue;
+    const key=sym+"@"+ex;
+    const s=stepOf(pct,unit,steps[key]==null?null:steps[key]);
+    if(s!==steps[key]){
+      if(Math.abs(s)>Math.abs(steps[key]||0)) rang=true;
+      steps[key]=s; dirty=true;
+    }
+    if(Math.abs(s)>=1) hits.push({sym,s,pct,shown:Math.abs(s)*unit});
   }
-  if(dirty){ try{ localStorage.setItem("cj_widget_alert",JSON.stringify(alertLog)); }catch(e){} }
+  if(dirty){ try{ localStorage.setItem("cj_widget_steps",JSON.stringify(steps)); }catch(e){} }
+
+  hits.sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct));
+  // 여러 개면 두 개까지만 — 길어지면 눈에 띈다
+  const txt=hits.slice(0,2).map(h=>`${h.sym} ${h.s>0?"▲":"▼"}${h.shown}%`).join("  ")
+          + (hits.length>2?`  +${hits.length-2}`:"");
+  setTray(hits.length?txt:"");
+  if(rang&&hits.length) beep();
+}
+async function setTray(text){
+  if(!IS_APP||!T.core) return;
+  // 위젯이 보이는 중이면 트레이 표시는 불필요
+  let vis=false; try{ vis=await appWin().isVisible(); }catch(e){}
+  try{ await T.core.invoke("set_tray_text",{text:vis?"":text}); }catch(e){}
 }
 
 /* ---------- render widget ---------- */
@@ -198,7 +229,9 @@ function render(){
     if(cfg.cols.includes("tkr")||cfg.cols.includes("name")){
       const t=cfg.cols.includes("tkr")?`<span class="tkr">${sym}</span>`:"";
       const n=cfg.cols.includes("name")?`<span class="nm">${nameOf(sym)}</span>`:"";
-      cells.push(`<div style="display:flex;align-items:baseline;gap:5px;min-width:0">${t}${n}</div>`);
+      // 코인마다 대표 거래소가 다르므로 어디 시세인지 표시한다
+      const b=(q&&q.ex&&EX_LABEL[q.ex])?`<span class="exb e${q.ex}">${EX_LABEL[q.ex]}</span>`:"";
+      cells.push(`<div style="display:flex;align-items:baseline;gap:4px;min-width:0">${t}${n}${b}</div>`);
     }
     if(cfg.cols.includes("price")) cells.push(`<div class="px">${q?fmtPx(q.price,q.cur):"—"}</div>`);
     if(cfg.cols.includes("chg")){ const c=q?q.c24:null; cells.push(`<div class="cg ${cls(c)}">${chgTxt(c)}</div>`); }
@@ -227,6 +260,12 @@ function renderAlertChips(){
     return `<label class="chip ${on?"on":""}" data-al="${v}"><input type="checkbox" ${on?"checked":""}>${label}</label>`;
   }).join("");
 }
+function renderWinChips(){
+  $("#winChips").innerHTML=WINS.map(([v,label])=>{
+    const on=(draft.win||"1h")===v;
+    return `<label class="chip ${on?"on":""}" data-win="${v}"><input type="checkbox" ${on?"checked":""}>${label}</label>`;
+  }).join("");
+}
 function renderPicked(){
   $("#picked").innerHTML=draft.coins.map(s=>
     `<span class="ptag"><b>${s}</b>${(nameOf(s)!==s)?" "+nameOf(s):""}<span class="x" data-rm="${s}">×</span></span>`
@@ -246,7 +285,9 @@ function renderPicker(){
 }
 function openSettings(){
   draft=JSON.parse(JSON.stringify(cfg));
-  renderExChips(); renderColChips(); renderAlertChips(); renderPicker();
+  renderExChips(); renderColChips(); renderAlertChips(); renderWinChips(); renderPicker();
+  $("#soundChk").checked=!!draft.sound;
+  syncWinControls();
   $("#main").classList.remove("on"); $("#settings").classList.add("on");
   document.querySelector(".body").scrollTop=0;
 }
@@ -272,8 +313,12 @@ $("#colChips").addEventListener("click",e=>{
 $("#alertChips").addEventListener("click",e=>{
   const l=e.target.closest(".chip"); if(!l)return; e.preventDefault();
   draft.alert=+l.dataset.al; renderAlertChips();
-  if(draft.alert) ensureNotify();
 });
+$("#winChips").addEventListener("click",e=>{
+  const l=e.target.closest(".chip"); if(!l)return; e.preventDefault();
+  draft.win=l.dataset.win; renderWinChips();
+});
+$("#soundChk").addEventListener("change",e=>{ draft.sound=e.target.checked; });
 $("#coinSearch").addEventListener("input",renderPicker);
 $("#plist").addEventListener("click",e=>{
   const it=e.target.closest(".pitem"); if(!it)return;
@@ -291,28 +336,224 @@ $("#save").addEventListener("click",()=>{
   draft.cols=COLS.map(c=>c[0]).filter(k=>draft.cols.includes(k));
   draft.ex=Object.keys(EX_NAME).filter(e=>draft.ex.includes(e));
   cfg={...draft}; cfg._sel=cfg.ex[0]; cfg.alert=draft.alert||0;
-  saveCfg(cfg); render(); closeSettings();
+  cfg.win=draft.win||"1h"; cfg.sound=!!draft.sound;
+  saveCfg(cfg); render(); checkAlerts(); closeSettings();
 });
 
 /* ---------- window controls (Tauri) ---------- */
-const OPA=[1,.9,.75,.6];
-let ui={ pin:true, opa:0 };
-try{ const u=JSON.parse(localStorage.getItem("cj_widget_ui")); if(u) ui={...ui,...u}; }catch(e){}
+let ui={ opa:100, layer:"top", snap:true, hotkey:"", pos:null };
+try{
+  const u=JSON.parse(localStorage.getItem("cj_widget_ui"));
+  if(u){
+    ui={...ui,...u};
+    // 구버전 마이그레이션: opa는 0~3 인덱스, pin은 불리언이었다
+    if(typeof u.opa==="number"&&u.opa<=3) ui.opa=[100,90,75,60][u.opa]||100;
+    if(typeof u.pin==="boolean") ui.layer=u.pin?"top":"normal";
+  }
+}catch(e){}
 function saveUi(){ try{ localStorage.setItem("cj_widget_ui",JSON.stringify(ui)); }catch(e){} }
-
 function appWin(){ return T&&T.window? T.window.getCurrentWindow() : null; }
-async function applyPin(){
-  $("#pinBtn").classList.toggle("on",ui.pin);
-  const w=appWin(); if(w) try{ await w.setAlwaysOnTop(ui.pin); }catch(e){}
-}
+const TW=T&&T.window;
+
+/* --- 투명도: 설정값 적용 + hover 시 원래 밝기로 복원 --- */
+let hovering=false;
 function applyOpa(){
-  document.getElementById("app").style.setProperty("--opa",OPA[ui.opa]);
-  $("#opaBtn").classList.toggle("on",ui.opa>0);
+  const v=hovering?1:Math.max(5,Math.min(100,ui.opa))/100;
+  document.getElementById("app").style.setProperty("--opa",v);
 }
-$("#pinBtn").addEventListener("click",()=>{ ui.pin=!ui.pin; saveUi(); applyPin(); });
-$("#opaBtn").addEventListener("click",()=>{ ui.opa=(ui.opa+1)%OPA.length; saveUi(); applyOpa(); });
+document.getElementById("app").addEventListener("mouseenter",()=>{hovering=true;applyOpa();});
+document.getElementById("app").addEventListener("mouseleave",()=>{hovering=false;applyOpa();});
+
+/* --- 레이어 순위 --- */
+async function applyLayer(){
+  $("#pinBtn").classList.toggle("on",ui.layer==="top");
+  $("#pinBtn").dataset.tip = ui.layer==="top"?"항상 위 (켜짐)":"항상 위에 고정";
+  const w=appWin(); if(!w) return;
+  try{
+    await w.setAlwaysOnTop(ui.layer==="top");
+    if(typeof w.setAlwaysOnBottom==="function") await w.setAlwaysOnBottom(ui.layer==="bottom");
+  }catch(e){}
+}
+
+/* --- 가장자리 자석 + 드래그 --- */
+// 모니터 목록을 전부 들고 있어야 한다. 드래그 중 커서가 있는 화면 기준으로 계산하지 않으면
+// 2개 모니터 사이에서 창이 어느 쪽에도 안 걸치는 좌표로 빠져나가 사라진다.
+let monitors=[];
+function boxOf(m){
+  const sf=m.scaleFactor||1;
+  const wa=m.workArea||{position:m.position,size:m.size};
+  return {x:wa.position.x/sf, y:wa.position.y/sf, w:wa.size.width/sf, h:wa.size.height/sf};
+}
+async function loadMonitors(){
+  if(!TW) return;
+  try{
+    const ms=await TW.availableMonitors();
+    monitors=(ms||[]).map(boxOf);
+    if(!monitors.length){ const m=await TW.currentMonitor(); if(m) monitors=[boxOf(m)]; }
+  }catch(e){ monitors=[]; }
+}
+function boxAt(px,py){
+  return monitors.find(b=>px>=b.x&&px<b.x+b.w&&py>=b.y&&py<b.y+b.h) || null;
+}
+// 다른 모니터와 맞닿은 변에서는 자석·클램프를 끈다 (안 그러면 옆 화면으로 넘길 수 없다)
+function openSide(b,side){
+  return monitors.some(o=>{
+    if(o===b) return false;
+    if(side==="min-x") return Math.abs(o.x+o.w-b.x)<2 && o.y<b.y+b.h && o.y+o.h>b.y;
+    if(side==="max-x") return Math.abs(o.x-(b.x+b.w))<2 && o.y<b.y+b.h && o.y+o.h>b.y;
+    if(side==="min-y") return Math.abs(o.y+o.h-b.y)<2 && o.x<b.x+b.w && o.x+o.w>b.x;
+    return Math.abs(o.y-(b.y+b.h))<2 && o.x<b.x+b.w && o.x+o.w>b.x;
+  });
+}
+// 1단계: 가장자리 근처면 딱 붙임. 2단계: 더 밀면 화면 밖으로, 단 PEEK_PX는 남긴다.
+// 다른 모니터와 이어진 변(openMin/openMax)은 건드리지 않고 그대로 통과시킨다.
+function snapAxis(pos,size,min,max,on,openMin,openMax){
+  if(on){
+    if(!openMin && pos>min-PUSH_PX && pos<min+SNAP_PX) return min;
+    if(!openMax && pos+size>max-SNAP_PX && pos+size<max+PUSH_PX) return max-size;
+  }
+  if(!openMin && pos<=min-PUSH_PX) return Math.max(pos,min-(size-PEEK_PX));
+  if(!openMax && pos+size>=max+PUSH_PX) return Math.min(pos,max-PEEK_PX);
+  return pos;
+}
+// 최후의 안전망: 어느 모니터에도 최소 폭만큼 걸치지 않으면 가장 가까운 화면으로 끌어온다
+function rescue(x,y,w,h,need){
+  need=need||PEEK_PX;
+  if(!monitors.length) return {x,y};
+  const vis=b=>Math.max(0,Math.min(x+w,b.x+b.w)-Math.max(x,b.x))
+              *Math.max(0,Math.min(y+h,b.y+b.h)-Math.max(y,b.y));
+  if(monitors.some(b=>Math.max(0,Math.min(x+w,b.x+b.w)-Math.max(x,b.x))>=need
+                   && Math.max(0,Math.min(y+h,b.y+b.h)-Math.max(y,b.y))>=need)) return {x,y};
+  let best=monitors[0],bv=-1;
+  monitors.forEach(b=>{ const v=vis(b); if(v>bv){bv=v;best=b;} });
+  return { x:Math.max(best.x,Math.min(x,best.x+best.w-w)),
+           y:Math.max(best.y,Math.min(y,best.y+best.h-h)) };
+}
+let drag=null;
+$("#titlebar").addEventListener("mousedown",async e=>{
+  if(e.button!==0||e.target.closest(".tbtn")||!TW) return;
+  e.preventDefault();
+  const w=appWin(); if(!w) return;
+  try{
+    await loadMonitors();                       // 모니터 구성이 바뀌었을 수 있다
+    const sf=await w.scaleFactor();
+    const p=await w.outerPosition(), s=await w.outerSize();
+    drag={ w, sf, mx:e.screenX, my:e.screenY,
+           ox:p.x/sf, oy:p.y/sf, ww:s.width/sf, wh:s.height/sf };
+  }catch(err){ drag=null; }
+});
+window.addEventListener("mousemove",e=>{
+  if(!drag) return;
+  let x=drag.ox+(e.screenX-drag.mx), y=drag.oy+(e.screenY-drag.my);
+  // 드래그 시작 화면이 아니라 "지금 커서가 있는 화면" 기준으로 스냅한다
+  const b=boxAt(e.screenX,e.screenY);
+  if(b){
+    x=snapAxis(x,drag.ww,b.x,b.x+b.w,ui.snap,openSide(b,"min-x"),openSide(b,"max-x"));
+    y=snapAxis(y,drag.wh,b.y,b.y+b.h,ui.snap,openSide(b,"min-y"),openSide(b,"max-y"));
+  }
+  drag.lx=x; drag.ly=y;
+  try{ drag.w.setPosition(new TW.LogicalPosition(x,y)); }catch(err){}
+});
+window.addEventListener("mouseup",()=>{
+  if(!drag) return;
+  const d=drag; drag=null;
+  if(d.lx==null) return;
+  const r=rescue(d.lx,d.ly,d.ww,d.wh);
+  if(r.x!==d.lx||r.y!==d.ly){ try{ d.w.setPosition(new TW.LogicalPosition(r.x,r.y)); }catch(e){} }
+  ui.pos={x:r.x,y:r.y}; saveUi();
+});
+// 저장된 위치 복원 — 모니터 구성이 바뀌었을 수 있으니 실제 화면 안으로 끌어온다.
+// 복원 때는 겨우 걸친 상태로 되살아나면 못 찾으므로 넉넉히(80px) 요구한다.
+async function restorePos(){
+  if(!ui.pos||!TW) return;
+  const w=appWin(); if(!w) return;
+  try{
+    await loadMonitors();
+    const sf=await w.scaleFactor(), s=await w.outerSize();
+    const r=rescue(ui.pos.x,ui.pos.y,s.width/sf,s.height/sf,80);
+    await w.setPosition(new TW.LogicalPosition(r.x,r.y));
+    ui.pos=r; saveUi();
+  }catch(e){}
+}
+
+/* --- 전역 단축키 --- */
+function accelFromEvent(e){
+  const mods=[];
+  if(e.metaKey) mods.push("Super");
+  if(e.ctrlKey) mods.push("Control");
+  if(e.altKey) mods.push("Alt");
+  if(e.shiftKey) mods.push("Shift");
+  let k=null;
+  if(/^Key[A-Z]$/.test(e.code)) k=e.code.slice(3);
+  else if(/^Digit[0-9]$/.test(e.code)) k=e.code.slice(5);
+  else if(/^F([1-9]|1[0-9]|2[0-4])$/.test(e.code)) k=e.code;
+  else if(e.code==="Space") k="Space";
+  else if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) k=e.code.replace("Arrow","");
+  if(!k) return null;
+  return {acc:[...mods,k].join("+"), hasMod:e.metaKey||e.ctrlKey||e.altKey};
+}
+async function applyHotkey(acc){
+  if(!IS_APP||!T.core) return null;
+  try{ await T.core.invoke("set_hotkey",{accelerator:acc||""}); return null; }
+  catch(e){ return String(e); }
+}
+function hkMsg(text,bad){
+  const el=$("#hkMsg"); el.textContent=text; el.classList.toggle("err",!!bad);
+  $("#hkInput").classList.toggle("bad",!!bad);
+}
+$("#hkInput").addEventListener("focus",()=>{ $("#hkInput").classList.add("rec"); hkMsg("키를 누르세요…",false); });
+$("#hkInput").addEventListener("blur",()=>{ $("#hkInput").classList.remove("rec"); });
+$("#hkInput").addEventListener("keydown",async e=>{
+  e.preventDefault();
+  if(e.key==="Escape"){ $("#hkInput").blur(); return; }
+  const r=accelFromEvent(e);
+  if(!r) return;
+  if(!r.hasMod){ hkMsg("Ctrl·Alt·Cmd 중 하나는 반드시 포함해야 합니다.",true); return; }
+  const err=await applyHotkey(r.acc);
+  if(err){ hkMsg("이미 사용 중인 단축키입니다. 다른 조합을 눌러주세요.",true); await applyHotkey(ui.hotkey); return; }
+  ui.hotkey=r.acc; saveUi();
+  $("#hkInput").value=r.acc; hkMsg("등록되었습니다.",false);
+});
+$("#hkClear").addEventListener("click",async()=>{
+  ui.hotkey=""; saveUi(); $("#hkInput").value=""; await applyHotkey("");
+  hkMsg("단축키가 해제되었습니다.",false);
+});
+
+/* --- 창 설정 컨트롤 (설정 페이지 진입 시 현재 값 반영) --- */
+function syncWinControls(){
+  $("#opaRange").value=ui.opa; $("#opaNum").value=ui.opa;
+  $("#snapChk").checked=!!ui.snap;
+  $("#hkInput").value=ui.hotkey||"";
+  document.querySelectorAll("#layerSeg button").forEach(b=>
+    b.classList.toggle("on",b.dataset.layer===ui.layer));
+}
+// 슬라이더는 드래그 중 실시간 반영
+$("#opaRange").addEventListener("input",e=>{
+  ui.opa=+e.target.value; $("#opaNum").value=ui.opa; applyOpa(); saveUi();
+});
+// 숫자 입력은 Enter/포커스 아웃에서 반영 (타이핑 중간값이 적용되면 화면이 요동친다)
+function commitNum(){
+  let v=parseInt($("#opaNum").value,10);
+  if(isNaN(v)) v=ui.opa;
+  v=Math.max(5,Math.min(100,v));
+  ui.opa=v; $("#opaNum").value=v; $("#opaRange").value=v; applyOpa(); saveUi();
+}
+$("#opaNum").addEventListener("change",commitNum);
+$("#opaNum").addEventListener("blur",commitNum);
+$("#opaNum").addEventListener("keydown",e=>{ if(e.key==="Enter") commitNum(); });
+$("#layerSeg").addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  ui.layer=b.dataset.layer; saveUi(); applyLayer(); syncWinControls();
+});
+$("#snapChk").addEventListener("change",e=>{ ui.snap=e.target.checked; saveUi(); });
+
+/* --- 타이틀바 --- */
+$("#pinBtn").addEventListener("click",()=>{
+  ui.layer=(ui.layer==="top")?"normal":"top"; saveUi(); applyLayer(); syncWinControls();
+});
 $("#closeBtn").addEventListener("click",async()=>{
-  const w=appWin(); if(w){ try{ await w.hide(); return; }catch(e){} }
+  const w=appWin();
+  if(w){ try{ await w.hide(); checkAlerts(); return; }catch(e){} }
   window.close();
 });
 // 리사이즈 그립
@@ -325,11 +566,20 @@ document.querySelectorAll(".rz").forEach(el=>{
   });
 });
 
+// 트레이 "화면 중앙으로 되돌리기" — 투명도까지 되살려야 실제로 보인다
+if(IS_APP&&T.event){
+  T.event.listen("cj://recover",()=>{
+    if(ui.opa<40){ ui.opa=100; }
+    ui.pos=null; saveUi(); syncWinControls(); applyOpa(); setTray("");
+  });
+}
+
 if(!IS_APP){
   document.querySelector(".titlebar").style.display="none";
   document.querySelectorAll(".rz").forEach(el=>el.remove());
 }
-applyPin(); applyOpa();
+applyOpa(); applyLayer(); syncWinControls(); restorePos();
+if(ui.hotkey) applyHotkey(ui.hotkey);
 
 load();
 setInterval(load,REFRESH);
