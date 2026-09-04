@@ -44,12 +44,14 @@
   /* ===== widget (main) ===== */
   #main{}
   .wtop{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--line)}
-  .exbtns{display:flex;gap:3px}
+  .exbtns{display:flex;gap:3px;flex-wrap:wrap;min-width:0}
   .exbtn{background:var(--card2);border:1px solid var(--line);color:var(--tx2);font-size:11px;
     padding:3px 7px;border-radius:6px;font-weight:600}
   .exbtn.on{color:#fff;border-color:transparent}
-  .exbtn.on[data-e="KR"]{background:var(--U)}
-  .exbtn.on[data-e="GL"]{background:var(--BN);color:#1a1400}
+  .exbtn.on[data-e="U"]{background:var(--U)}
+  .exbtn.on[data-e="B"]{background:var(--B);color:#1a1400}
+  .exbtn.on[data-e="BN"]{background:var(--BN);color:#1a1400}
+  .exbtn.on[data-e="BY"]{background:var(--BY);color:#1a0d00}
   .gear{margin-left:auto;background:none;border:none;color:var(--tx3);font-size:14px;line-height:1;padding:2px 4px;border-radius:5px}
   .gear:hover{color:var(--tx);background:var(--card2)}
   .live{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--tx3)}
@@ -172,11 +174,3 @@
     font-size:10.5px;padding:5px 7px;border-radius:6px}
   .mini:hover{color:var(--tx);border-color:var(--tx3)}
   .hint.err{color:var(--up)}
-
-  /* 행에 표시하는 실제 거래소 뱃지 (코인마다 대표 거래소가 다름) */
-  .exb{font-size:9px;font-weight:600;padding:1px 4px;border-radius:4px;flex:none;
-    background:var(--card2);color:var(--tx3);line-height:1.4}
-  .exb.eU{background:rgba(61,90,254,.18);color:#7d93ff}
-  .exb.eB{background:rgba(247,166,0,.18);color:var(--B)}
-  .exb.eBN{background:rgba(240,185,11,.18);color:var(--BN)}
-  .exb.eBY{background:rgba(255,122,69,.18);color:var(--BY)}

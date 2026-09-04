@@ -1,7 +1,9 @@
-// 서버가 만든 컴팩트 파일 하나만 받는다. 김프까지 서버에서 계산돼 들어 있다.
-// 항목: [심볼, 이름, 국내ex, 원화가, 24h, 1h, 해외ex, 달러가, 24h, 1h, 김프%]
-// 시총 내림차순 정렬 상태로 온다.
+// 서버가 만든 컴팩트 파일. 열(column) 방식이라 s[i] 와 pU[i] 가 같은 코인이다.
+// 시총 내림차순 정렬 상태로 온다. 김프는 사이트 계산값이 그대로 들어 있다.
 const API="https://coinjura.com/theme/basic/live/widget-v1.js";
+// 한글명은 거의 안 바뀌므로 따로 받아 캐시한다(1시간마다 확인).
+const API_NAMES="https://coinjura.com/theme/basic/live/widget-names.js";
+const NAMES_TTL=3600000;
 const REFRESH=120000;
 
 /* ---- Tauri bridge (앱에서는 http 플러그인으로 CORS 우회, 브라우저에서는 일반 fetch) ---- */
@@ -9,17 +11,18 @@ const T=window.__TAURI__;
 const IS_APP=!!T;
 const cjFetch=(T&&T.http&&T.http.fetch)?T.http.fetch:window.fetch.bind(window);
 const getJSON=u=>cjFetch(u,{cache:"no-store"}).then(r=>r.json());
-// 소스가 코인당 국내 대표 1곳·해외 대표 1곳만 담는다(코인주라 시세 정책).
-// 거래소를 직접 고르는 게 아니라 국내/해외를 고르고, 실제 거래소는 행에 표시한다.
-const EX_NAME={KR:"국내",GL:"해외"};
-const EX_CUR ={KR:"KRW",GL:"USD"};
-const EX_LABEL={U:"업비트",B:"빗썸",BN:"바이낸스",BY:"바이비트"};
-const EX_MIGRATE={U:"KR",B:"KR",BN:"GL",BY:"GL"};   // 예전 설정 이관용
+const EX_NAME={U:"업비트",B:"빗썸",BN:"바이낸스",BY:"바이비트"};
+const EX_CUR ={U:"KRW",B:"KRW",BN:"USD",BY:"USD"};
+// 데이터 파일의 열 이름
+const EX_PX ={U:"pU",B:"pB",BN:"pBN",BY:"pBY"};
+const EX_CHG={U:"cU",B:"cB",BN:"cBN",BY:"cBY"};
+const EX_H1 ={U:"h1k",B:"h1k",BN:"h1g",BY:"h1g"};   // 1시간 변동률은 국내/해외 단위로만 제공
+const EX_MIGRATE={KR:"U",GL:"BN"};                  // 국내/해외 2종을 쓰던 설정 이관용
 const COLS=[["tkr","티커"],["name","코인명"],["price","시세"],["chg","변동률"],["kimp","김프"]];
 
 
 // ---- default settings ----
-const DEFAULT={ ex:["KR","GL"], cols:["tkr","name","price","chg","kimp"], coins:["BTC","XRP","SOL"],
+const DEFAULT={ ex:["U","B","BN","BY"], cols:["tkr","name","price","chg","kimp"], coins:["BTC","ETH","XRP","SOL","ADA"],
                 alert:0, win:"10m", sound:false };
 // 단위 = 발동 임계값이자 갱신 단위. 2% 선택 시 2,4,6,8…에서 표시가 바뀐다.
 const ALERTS=[[0,"끄기"],[1,"1%"],[2,"2%"],[3,"3%"],[4,"4%"],[5,"5%"]];
@@ -28,10 +31,10 @@ function loadCfg(){
   try{
     const c=JSON.parse(localStorage.getItem("cj_widget"));
     if(c&&c.coins){
-      // 거래소 4종을 쓰던 예전 설정 → 국내/해외로 이관
+      // 국내/해외 2종을 쓰던 설정 → 거래소 4종으로 되돌린다
       if(Array.isArray(c.ex) && c.ex.some(e=>EX_MIGRATE[e])){
         c.ex=[...new Set(c.ex.map(e=>EX_MIGRATE[e]||e))].filter(e=>EX_NAME[e]);
-        if(!c.ex.length) c.ex=["KR","GL"];
+        if(!c.ex.length) c.ex=["U","B","BN","BY"];
         delete c._sel;
       }
       return c;
@@ -43,45 +46,87 @@ function saveCfg(c){ try{ localStorage.setItem("cj_widget",JSON.stringify(c)); }
 
 let cfg=loadCfg();
 let draft=JSON.parse(JSON.stringify(cfg));  // 설정 페이지 편집용
-const data={ map:{}, all:[], rate:0, t:0 };
+const data={ d:null, idx:{}, all:[], names:{}, rate:0, t:0, namesAt:0 };
 const $=s=>document.querySelector(s);
 
 /* ---------- fetch ---------- */
 async function load(){
   try{
-    const d=await getJSON(API);
-    data.rate=d.r||0;
-    data.t=d.t||0;
-    const map={}, all=[];
-    (d.i||[]).forEach(x=>{ map[x[0]]=x; all.push({s:x[0],name:x[1]}); });
-    data.map=map;
-    data.all=all;   // 파일이 이미 시총 내림차순이므로 그대로 쓴다
+    let d=await getJSON(API);
+    // 서버가 아직 예전(행) 형식이면 열 형식으로 바꿔 읽는다.
+    // 앱과 서버 배포 시점이 어긋나도 깨지지 않게 하기 위한 것으로, 서버가 넘어가면 지워도 된다.
+    if(Array.isArray(d.i)) d=fromLegacy(d);
+    data.d=d; data.rate=d.r||0; data.t=d.t||0;
+    const idx={};
+    (d.s||[]).forEach((sym,i)=>idx[sym]=i);
+    data.idx=idx;
+    await loadNames();
+    data.all=(d.s||[]).map(sym=>({s:sym,name:nameOf(sym)}));  // 파일이 이미 시총순
     $("#dot").className="dot on";
     render(); if($("#settings").classList.contains("on")) renderPicker();
     checkAlerts();
   }catch(e){
     $("#dot").className="dot err";
-    if(!Object.keys(data.map).length) $("#rows").innerHTML='<div class="empty">데이터를 불러오지 못했습니다.</div>';
+    if(!data.d) $("#rows").innerHTML='<div class="empty">데이터를 불러오지 못했습니다.</div>';
   }
 }
 
-function nameOf(s){ const x=data.map[s]; return (x&&x[1])||s; }
+function nameOf(s){ return data.names[s]||s; }
+
+// 한글명은 따로 받아 localStorage에 캐시한다. 1시간마다만 다시 확인한다.
+async function loadNames(){
+  if(data.d && data.d._names){ data.names=data.d._names; data.namesAt=Date.now(); return; }
+  if(Object.keys(data.names).length && Date.now()-data.namesAt<NAMES_TTL) return;
+  try{
+    const c=JSON.parse(localStorage.getItem("cj_widget_names")||"null");
+    if(c&&c.at&&Date.now()-c.at<NAMES_TTL&&c.n){ data.names=c.n; data.namesAt=c.at; return; }
+  }catch(e){}
+  try{
+    const r=await getJSON(API_NAMES);
+    const m={}; (r.n||[]).forEach(([s,n])=>m[s]=n);
+    if(Object.keys(m).length){
+      data.names=m; data.namesAt=Date.now();
+      try{ localStorage.setItem("cj_widget_names",JSON.stringify({at:data.namesAt,n:m})); }catch(e){}
+    }
+  }catch(e){ /* 이름은 없어도 심볼로 표시된다 */ }
+}
+
+// 예전 행 형식 → 열 형식. 예전 파일은 코인당 대표 거래소 한 곳씩만 담고 있어서
+// 해당 거래소 자리에만 값이 들어가고 나머지는 0(미상장)이 된다.
+// [심볼, 이름, 국내ex, 원화가, 24h, 1h, 해외ex, 달러가, 24h, 1h, 김프]
+function fromLegacy(d){
+  const o={t:d.t,r:d.r,n:(d.i||[]).length,s:[],pU:[],cU:[],pB:[],cB:[],
+           pBN:[],cBN:[],pBY:[],cBY:[],h1k:[],h1g:[],kp:[]};
+  const nm={};
+  (d.i||[]).forEach(x=>{
+    o.s.push(x[0]); nm[x[0]]=x[1];
+    o.pU.push(x[2]==="U"?x[3]:0);   o.cU.push(x[2]==="U"?x[4]:0);
+    o.pB.push(x[2]==="B"?x[3]:0);   o.cB.push(x[2]==="B"?x[4]:0);
+    o.pBN.push(x[6]==="BN"?x[7]:0); o.cBN.push(x[6]==="BN"?x[8]:0);
+    o.pBY.push(x[6]==="BY"?x[7]:0); o.cBY.push(x[6]==="BY"?x[8]:0);
+    o.h1k.push(x[5]||0); o.h1g.push(x[9]||0); o.kp.push(x[10]||0);
+  });
+  o._names=nm;
+  return o;
+}
 
 /* ---------- lookup ---------- */
-// 항목 인덱스: 0 심볼 1 이름 2 국내ex 3 원화가 4 24h 5 1h 6 해외ex 7 달러가 8 24h 9 1h 10 김프
+// 열 방식: 같은 인덱스가 같은 코인. 0 은 그 거래소에 없다는 뜻이다.
 function quote(sym,ex){
-  const x=data.map[sym]; if(!x) return null;
-  const k=(ex==="KR");
-  const price=k?x[3]:x[7];
+  const d=data.d; if(!d) return null;
+  const i=data.idx[sym]; if(i===undefined) return null;
+  const price=(d[EX_PX[ex]]||[])[i];
   if(!price) return null;
-  return { price, c24:k?x[4]:x[8], c1h:k?x[5]:x[9], cur:EX_CUR[ex], ex:k?x[2]:x[6] };
+  return { price, c24:(d[EX_CHG[ex]]||[])[i]||null, c1h:(d[EX_H1[ex]]||[])[i]||null, cur:EX_CUR[ex] };
 }
 
 /* ---------- kimchi premium ---------- */
-// 서버가 계산해 보낸 값을 그대로 쓴다. 0은 미산출(한쪽 미상장 또는 티커 충돌).
+// 사이트가 계산한 값을 그대로 쓴다. 어느 거래소 탭에서든 같은 값이다(사이트와 일치 보장).
+// 0 은 미산출 — 한쪽 미상장이거나 티커가 겹치는 다른 코인인 경우.
 function kimp(sym){
-  const x=data.map[sym];
-  return (x && x[10]) ? x[10] : null;
+  const d=data.d; if(!d) return null;
+  const i=data.idx[sym]; if(i===undefined) return null;
+  return (d.kp||[])[i] || null;
 }
 function kimpTxt(v){ if(v==null)return"—"; return (v>0?"+":"")+v.toFixed(2)+"%"; }
 
@@ -100,7 +145,9 @@ function chgTxt(v){ if(v==null)return"—"; return (v>0?"+":"")+v.toFixed(2)+"%"
    히스토리가 부족하면 표시하지 않는다(24시간 기준은 c24를 그대로 사용). */
 const WIN_MS={"2m":12e4,"10m":6e5,"1h":36e5,"24h":864e5};
 const HIST_KEEP=75*60*1000;     // 1시간 창 + 여유
-const SNAP_PX=20, PUSH_PX=12, PEEK_PX=28;
+// 붙는 거리(SNAP_IN)보다 떨어지는 거리(SNAP_OUT)를 크게 둔다.
+// 두 값이 같으면 가장자리에서 붙었다 떨어졌다를 반복해 벽에 들러붙는 느낌이 난다.
+const SNAP_IN=12, SNAP_OUT=44, PUSH_PX=44, PEEK_PX=28;
 
 let hist={};
 try{ hist=JSON.parse(localStorage.getItem("cj_widget_hist"))||{}; }catch(e){}
@@ -229,9 +276,7 @@ function render(){
     if(cfg.cols.includes("tkr")||cfg.cols.includes("name")){
       const t=cfg.cols.includes("tkr")?`<span class="tkr">${sym}</span>`:"";
       const n=cfg.cols.includes("name")?`<span class="nm">${nameOf(sym)}</span>`:"";
-      // 코인마다 대표 거래소가 다르므로 어디 시세인지 표시한다
-      const b=(q&&q.ex&&EX_LABEL[q.ex])?`<span class="exb e${q.ex}">${EX_LABEL[q.ex]}</span>`:"";
-      cells.push(`<div style="display:flex;align-items:baseline;gap:4px;min-width:0">${t}${n}${b}</div>`);
+      cells.push(`<div style="display:flex;align-items:baseline;gap:5px;min-width:0">${t}${n}</div>`);
     }
     if(cfg.cols.includes("price")) cells.push(`<div class="px">${q?fmtPx(q.price,q.cur):"—"}</div>`);
     if(cfg.cols.includes("chg")){ const c=q?q.c24:null; cells.push(`<div class="cg ${cls(c)}">${chgTxt(c)}</div>`); }
@@ -407,10 +452,23 @@ function openSide(b,side){
 }
 // 1단계: 가장자리 근처면 딱 붙임. 2단계: 더 밀면 화면 밖으로, 단 PEEK_PX는 남긴다.
 // 다른 모니터와 이어진 변(openMin/openMax)은 건드리지 않고 그대로 통과시킨다.
-function snapAxis(pos,size,min,max,on,openMin,openMax){
+function snapAxis(pos,size,min,max,on,openMin,openMax,st){
+  st=st||{};
   if(on){
-    if(!openMin && pos>min-PUSH_PX && pos<min+SNAP_PX) return min;
-    if(!openMax && pos+size>max-SNAP_PX && pos+size<max+PUSH_PX) return max-size;
+    // 이미 붙어 있으면 SNAP_OUT 만큼 끌어내야 떨어진다
+    if(st.edge==="min"){
+      if(!openMin && pos<min+SNAP_OUT) return min;
+      st.edge=null;
+    }else if(st.edge==="max"){
+      if(!openMax && pos+size>max-SNAP_OUT) return max-size;
+      st.edge=null;
+    }
+    if(!st.edge){
+      if(!openMin && pos>min-PUSH_PX && pos<min+SNAP_IN){ st.edge="min"; return min; }
+      if(!openMax && pos+size>max-SNAP_IN && pos+size<max+PUSH_PX){ st.edge="max"; return max-size; }
+    }
+  }else{
+    st.edge=null;
   }
   if(!openMin && pos<=min-PUSH_PX) return Math.max(pos,min-(size-PEEK_PX));
   if(!openMax && pos+size>=max+PUSH_PX) return Math.min(pos,max-PEEK_PX);
@@ -439,7 +497,8 @@ $("#titlebar").addEventListener("mousedown",async e=>{
     const sf=await w.scaleFactor();
     const p=await w.outerPosition(), s=await w.outerSize();
     drag={ w, sf, mx:e.screenX, my:e.screenY,
-           ox:p.x/sf, oy:p.y/sf, ww:s.width/sf, wh:s.height/sf };
+           ox:p.x/sf, oy:p.y/sf, ww:s.width/sf, wh:s.height/sf,
+           sx:{edge:null}, sy:{edge:null} };   // 축별 스냅 상태(히스테리시스용)
   }catch(err){ drag=null; }
 });
 window.addEventListener("mousemove",e=>{
@@ -448,8 +507,10 @@ window.addEventListener("mousemove",e=>{
   // 드래그 시작 화면이 아니라 "지금 커서가 있는 화면" 기준으로 스냅한다
   const b=boxAt(e.screenX,e.screenY);
   if(b){
-    x=snapAxis(x,drag.ww,b.x,b.x+b.w,ui.snap,openSide(b,"min-x"),openSide(b,"max-x"));
-    y=snapAxis(y,drag.wh,b.y,b.y+b.h,ui.snap,openSide(b,"min-y"),openSide(b,"max-y"));
+    // 드래그 중 ⌥(Option)을 누르고 있으면 스냅을 잠시 끈다 — 정밀 배치용
+    const snapOn=ui.snap && !e.altKey;
+    x=snapAxis(x,drag.ww,b.x,b.x+b.w,snapOn,openSide(b,"min-x"),openSide(b,"max-x"),drag.sx);
+    y=snapAxis(y,drag.wh,b.y,b.y+b.h,snapOn,openSide(b,"min-y"),openSide(b,"max-y"),drag.sy);
   }
   drag.lx=x; drag.ly=y;
   try{ drag.w.setPosition(new TW.LogicalPosition(x,y)); }catch(err){}
