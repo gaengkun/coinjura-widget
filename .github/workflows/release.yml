@@ -15,10 +15,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest      # Apple Silicon
+          - platform: macos-latest      # Apple Silicon 전용
             args: '--target aarch64-apple-darwin'
-          - platform: macos-latest      # Intel 맥
-            args: '--target x86_64-apple-darwin'
           - platform: windows-latest    # .msi + .exe(NSIS)
             args: ''
 
@@ -32,7 +30,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
 
       - uses: swatinem/rust-cache@v2
         with:
@@ -62,10 +60,8 @@ jobs:
           out=""
           for f in $(find src-tauri/target -name '*.dmg' -o -name '*-setup.exe'); do
             case "$f" in
-              *aarch64*.dmg)
-                cp "$f" coinjura-widget-mac-arm64.dmg;  out="$out coinjura-widget-mac-arm64.dmg" ;;
-              *x64*.dmg|*x86_64*.dmg)
-                cp "$f" coinjura-widget-mac-intel.dmg;  out="$out coinjura-widget-mac-intel.dmg" ;;
+              *.dmg)
+                cp "$f" coinjura-widget-mac.dmg;        out="$out coinjura-widget-mac.dmg" ;;
               *-setup.exe)
                 cp "$f" coinjura-widget-win-setup.exe;  out="$out coinjura-widget-win-setup.exe" ;;
             esac
