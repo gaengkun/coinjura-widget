@@ -57,14 +57,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${{ github.ref_name }}"
-          out=""
-          for f in $(find src-tauri/target -name '*.dmg' -o -name '*-setup.exe'); do
+          # 파일 이름에 공백이 있다("Coinjura Widget_...exe"). $(find) 를 그냥 돌리면
+          # 공백에서 쪼개져 경로가 깨지므로 널 구분자로 읽는다.
+          while IFS= read -r -d '' f; do
             case "$f" in
-              *.dmg)
-                cp "$f" coinjura-widget-mac.dmg;        out="$out coinjura-widget-mac.dmg" ;;
-              *-setup.exe)
-                cp "$f" coinjura-widget-win-setup.exe;  out="$out coinjura-widget-win-setup.exe" ;;
+              *.dmg)       cp "$f" coinjura-widget-mac.dmg ;;
+              *-setup.exe) cp "$f" coinjura-widget-win-setup.exe ;;
             esac
+          done < <(find src-tauri/target \( -name '*.dmg' -o -name '*-setup.exe' \) -print0)
+          for f in coinjura-widget-mac.dmg coinjura-widget-win-setup.exe; do
+            if [ -f "$f" ]; then
+              echo "올림: $f"
+              gh release upload "$tag" "$f" --clobber
+            fi
           done
-          echo "업로드 대상:$out"
-          for f in $out; do gh release upload "$tag" "$f" --clobber; done
