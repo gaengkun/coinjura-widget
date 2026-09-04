@@ -16,7 +16,6 @@ const EX_CUR ={U:"KRW",B:"KRW",BN:"USD",BY:"USD"};
 // 데이터 파일의 열 이름
 const EX_PX ={U:"pU",B:"pB",BN:"pBN",BY:"pBY"};
 const EX_CHG={U:"cU",B:"cB",BN:"cBN",BY:"cBY"};
-const EX_H1 ={U:"h1k",B:"h1k",BN:"h1g",BY:"h1g"};   // 1시간 변동률은 국내/해외 단위로만 제공
 const EX_MIGRATE={KR:"U",GL:"BN"};                  // 국내/해외 2종을 쓰던 설정 이관용
 const COLS=[["tkr","티커"],["name","코인명"],["price","시세"],["chg","변동률"],["kimp","김프"]];
 
@@ -117,7 +116,7 @@ function quote(sym,ex){
   const i=data.idx[sym]; if(i===undefined) return null;
   const price=(d[EX_PX[ex]]||[])[i];
   if(!price) return null;
-  return { price, c24:(d[EX_CHG[ex]]||[])[i]||null, c1h:(d[EX_H1[ex]]||[])[i]||null, cur:EX_CUR[ex] };
+  return { price, c24:(d[EX_CHG[ex]]||[])[i]||null, cur:EX_CUR[ex] };
 }
 
 /* ---------- kimchi premium ---------- */
@@ -168,9 +167,9 @@ function saveHist(){
 function pctOver(sym,ex,win){
   const q=quote(sym,ex); if(!q) return null;
   if(win==="24h") return q.c24;
-  // API가 1시간 변동률(c1h)을 직접 준다 — 히스토리를 쌓을 필요가 없다(제공률 93%).
+  // 데이터 파일은 24h 만 담는다. 그보다 짧은 창은 폴링하며 쌓은 히스토리로 계산한다.
+  // (거래소 API 가 1h 를 주지 않아서, 서버에 넣으려면 스냅 계산이 필요하다)
   // 없는 코인만 아래 롤링 버퍼로 폴백한다.
-  if(win==="1h" && q.c1h!=null) return q.c1h;
   const a=hist[sym+"@"+ex]; if(!a||a.length<2) return null;
   const target=Date.now()-WIN_MS[win];
   let best=null,bd=Infinity;
