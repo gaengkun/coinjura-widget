@@ -1,0 +1,119 @@
+<title>알림</title>
+<style>
+  :root{
+    --card:#141822; --tx:#e6ebf3; --accent:#f7a600; --accent-tx:#f7a600;
+    --up:#e5484d; --down:#3d7bf6;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,"Cascadia Mono","Roboto Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Segoe UI","Malgun Gothic",sans-serif;
+  }
+  [data-theme="light"]{
+    --card:#f5f6f8; --tx:#12151b; --accent-tx:#a06a00;
+    --up:#d92d39; --down:#1f66e0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:transparent;height:100%;overflow:hidden;
+    font-family:var(--sans);-webkit-font-smoothing:antialiased;user-select:none;cursor:pointer}
+
+  /* 투명도는 위젯 설정을 그대로 따른다. 나타나고 사라지는 건 JS 가 transition 으로
+     몰기 때문에 여기서는 초기 상태(안 보임)만 잡아둔다. */
+  .bar{height:100%;display:flex;flex-direction:column;justify-content:center;gap:2px;
+    background:var(--card);border:1px solid var(--accent-tx);border-radius:10px;
+    padding:8px 12px;box-shadow:0 8px 22px -8px rgba(0,0,0,.6);
+    opacity:0}
+
+  /* 행 구성은 위젯 표와 같다 — 설정한 항목만 열로 들어간다 */
+  .ln{display:grid;align-items:center;gap:4px;height:18px;color:var(--tx)}
+  .nmw{display:flex;align-items:baseline;gap:4px;min-width:0}
+  .tkr{font-weight:700;font-size:12px;letter-spacing:-.01em}
+  .nm{font-size:10px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .px{text-align:right;font-family:var(--mono);font-size:11.5px;font-weight:600}
+  .cg{text-align:right;font-family:var(--mono);font-size:11px;font-weight:600}
+  .kp{text-align:right;font-family:var(--mono);font-size:10.5px;color:var(--tx2)}
+  .up{color:var(--up)} .down{color:var(--down)}
+</style>
+
+<div class="bar" id="bar"></div>
+
+<script>
+  const T=window.__TAURI__;
+  const bar=()=>document.getElementById("bar");
+  const IN_MS=280, HOLD_MS=3000, OUT_MS=2000;
+  let fadeT=null;
+
+  // 위젯 창과 같은 출처라 테마·투명도 설정을 그대로 읽는다.
+  function readUi(){
+    try{ return JSON.parse(localStorage.getItem("cj_widget_ui"))||{}; }catch(e){ return {}; }
+  }
+  function applyTheme(u){
+    document.documentElement.dataset.theme = (u.theme==="light") ? "light" : "dark";
+  }
+  function targetOpa(u){
+    const v = (typeof u.opa==="number") ? u.opa : 100;
+    return Math.max(5, Math.min(100, v)) / 100;   // 위젯과 같은 하한 5%
+  }
+  applyTheme(readUi());
+
+  /* 눌렀을 때 — 몰래 보다가 누르면 바로 없어져야 하므로 연출 없이 즉시 지운다 */
+  document.addEventListener("click",()=>{
+    clearTimeout(fadeT);
+    const b=bar();
+    b.style.transition="none";
+    b.style.opacity="0";
+    try{ T && T.core && T.core.invoke("hide_toast"); }catch(e){}
+  });
+
+  /* ① Rust 가 창을 띄우기 전에 부른다 — 내용만 채우고 안 보이는 상태로 대기 */
+  function gridOf(cols){
+    const parts=[];
+    if(cols.includes("tkr")||cols.includes("name")) parts.push("1fr");
+    if(cols.includes("price")) parts.push("84px");
+    if(cols.includes("chg"))   parts.push("58px");
+    if(cols.includes("kimp"))  parts.push("44px");
+    return parts.join(" ");
+  }
+  function cell(tag,cls,text){
+    const el=document.createElement(tag); el.className=cls;
+    el.textContent=text==null?"":String(text); return el;
+  }
+  window.__cjToast=function(lines,cols){
+    const u=readUi();
+    applyTheme(u);
+    const list=Array.isArray(lines)?lines:[lines];
+    const cs=(Array.isArray(cols)&&cols.length)?cols:["tkr","chg"];
+    const tmpl=gridOf(cs);
+    const b=bar();
+    b.innerHTML="";
+    for(const it of list){
+      const row=document.createElement("div");
+      row.className="ln"; row.style.gridTemplateColumns=tmpl;
+      if(cs.includes("tkr")||cs.includes("name")){
+        const w=document.createElement("div"); w.className="nmw";
+        if(cs.includes("tkr"))  w.appendChild(cell("span","tkr",it.sym));
+        if(cs.includes("name")) w.appendChild(cell("span","nm",it.name));
+        row.appendChild(w);
+      }
+      if(cs.includes("price")) row.appendChild(cell("div","px",it.px));
+      if(cs.includes("chg"))   row.appendChild(cell("div","cg "+(it.chgCls||""),it.chg));
+      if(cs.includes("kimp"))  row.appendChild(cell("div","kp "+(it.kimpCls||""),it.kimp));
+      b.appendChild(row);
+    }
+    clearTimeout(fadeT);
+    b.style.transition="none";
+    b.style.opacity="0";
+    b.style.transform="translateY(-7px) scale(.98)";
+  };
+
+  /* ② 창이 뜬 뒤에 부른다 — 창이 숨어 있는 동안에는 프레임이 안 돌아서
+        여기서 시작해야 첫 알림도 제대로 스르륵 나타난다 */
+  window.__cjPlay=function(){
+    const b=bar(), opa=targetOpa(readUi());
+    b.style.transition="opacity "+IN_MS+"ms ease-out, transform "+IN_MS+"ms ease-out";
+    b.style.opacity=String(opa);          // 0 → 설정 투명도
+    b.style.transform="none";
+    clearTimeout(fadeT);
+    fadeT=setTimeout(()=>{
+      b.style.transition="opacity "+OUT_MS+"ms ease-in";
+      b.style.opacity="0";                // 안 누르면 서서히 사라진다
+    }, HOLD_MS);
+  };
+</script>

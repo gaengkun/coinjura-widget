@@ -2,11 +2,18 @@
     --bg:#0e1118; --card:#141822; --card2:#1b202c; --line:#242b39;
     --tx:#e6ebf3; --tx2:#828c9f; --tx3:#525b6d;
     --up:#e5484d; --down:#3d7bf6;
-    --accent:#f7a600;
+    --accent:#f7a600;        /* 채움용 — 위에 어두운 글자를 얹는다 */
+    --accent-tx:#f7a600;     /* 글자·테두리용 — 배경에 따라 달라진다 */
     --U:#3d5afe; --B:#f7a600; --BN:#f0b90b; --BY:#ff7a45;
     --mono:"SF Mono",ui-monospace,Menlo,Consolas,"Cascadia Mono","Roboto Mono",monospace;
     --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Segoe UI","Malgun Gothic",sans-serif;
     font-size:12px;
+  }
+  [data-theme="light"]{
+    --bg:#ffffff; --card:#f5f6f8; --card2:#ebedf1; --line:#e2e5ea;
+    --tx:#12151b; --tx2:#5c6573; --tx3:#98a0ad;
+    --up:#d92d39; --down:#1f66e0;
+    --accent:#f7a600; --accent-tx:#a06a00;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{background:transparent;color:var(--tx);font-family:var(--sans);font-size:12px;-webkit-font-smoothing:antialiased}
@@ -14,7 +21,10 @@
   button{font-family:var(--sans);cursor:pointer}
 
   /* ===== app shell (frameless window) ===== */
-  .app{background:var(--bg);border:1px solid var(--line);border-radius:11px;overflow:hidden;
+  /* 창 전체가 드래그 손잡이라 글자가 선택되면 끌 때 지저분해진다.
+     입력란에서만 선택을 되살린다 */
+  .app{user-select:none;-webkit-user-select:none;
+    background:var(--bg);border:1px solid var(--line);border-radius:11px;overflow:hidden;
     height:100vh;display:flex;flex-direction:column;opacity:var(--opa,1);position:relative}
 
   /* 테두리 없는 창이라 리사이즈 핸들을 직접 만든다 (윈도우는 이게 없으면 크기 조절 불가) */
@@ -30,11 +40,19 @@
 
   .titlebar{display:flex;align-items:center;gap:4px;padding:5px 6px 5px 9px;
     background:var(--card);border-bottom:1px solid var(--line);flex:none;user-select:none}
-  .brand{font-size:10.5px;font-weight:700;color:var(--tx2);letter-spacing:-.01em;flex:1}
+  .brand{font-size:10.5px;font-weight:700;color:var(--tx2);letter-spacing:-.01em;flex:none}
+  /* 남는 폭은 이 여백이 먹는다. 타이틀바 빈 곳은 창을 옮기는 손잡이로 남겨둔다 */
+  .tspace{flex:1;align-self:stretch}
+  .sitebtn{flex:none;background:none;border:1px solid var(--line);color:var(--tx3);
+    font-family:var(--sans);font-size:9.5px;line-height:1;letter-spacing:-.02em;
+    padding:3px 6px;border-radius:5px;cursor:pointer;
+    transition:color .12s,border-color .12s,background .12s}
+  .sitebtn:hover{color:var(--accent-tx);border-color:var(--accent-tx);background:var(--card2)}
+  .sitebtn[data-tip]::after{right:auto;left:0}   /* 왼쪽에 있으니 툴팁도 왼쪽 정렬 */
   .tbtn{background:none;border:none;color:var(--tx3);font-size:11px;line-height:1;
     width:19px;height:19px;border-radius:5px;display:flex;align-items:center;justify-content:center;padding:0}
   .tbtn:hover{color:var(--tx);background:var(--card2)}
-  .tbtn.on{color:var(--accent)}
+  .tbtn.on{color:var(--accent-tx)}
   .tbtn.close:hover{background:var(--up);color:#fff}
 
   /* ===== page switch ===== */
@@ -84,11 +102,14 @@
   .back:hover{color:var(--tx);background:var(--card2)}
   .stop h2{font-size:12px;font-weight:700}
   .sec{padding:9px 10px;border-bottom:1px solid var(--line)}
+  /* 제목 오른쪽에 버튼을 두는 섹션 머리 — h3 의 아래 여백은 이쪽이 맡는다 */
+  .sechead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
+  .sechead h3{margin-bottom:0}
   .sec h3{font-size:10px;color:var(--tx3);font-weight:600;letter-spacing:.03em;text-transform:uppercase;margin-bottom:7px}
   .chips{display:flex;flex-wrap:wrap;gap:5px}
   .chip{display:flex;align-items:center;gap:5px;background:var(--card2);border:1px solid var(--line);
     border-radius:7px;padding:5px 8px;font-size:11px;color:var(--tx2);user-select:none}
-  .chip.on{border-color:var(--accent);color:var(--tx)}
+  .chip.on{border-color:var(--accent-tx);color:var(--tx)}
   .chip input{appearance:none;width:12px;height:12px;border:1.5px solid var(--tx3);border-radius:3px;position:relative;flex:none}
   .chip.on input{background:var(--accent);border-color:var(--accent)}
   .chip.on input::after{content:"✓";position:absolute;top:-2px;left:1px;font-size:10px;color:#1a1400;font-weight:700}
@@ -97,12 +118,12 @@
   .search{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:7px;
     padding:6px 9px;color:var(--tx);font-size:11px;font-family:var(--sans);margin-bottom:7px}
   .search::placeholder{color:var(--tx3)}
-  .search:focus{outline:none;border-color:var(--accent)}
+  .search:focus{outline:none;border-color:var(--accent-tx)}
   .picked{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:7px;min-height:4px}
   .ptag{display:flex;align-items:center;gap:4px;background:rgba(247,166,0,.14);border:1px solid rgba(247,166,0,.3);
-    color:var(--accent);border-radius:6px;padding:3px 6px;font-size:10.5px;font-weight:600}
+    color:var(--accent-tx);border-radius:6px;padding:3px 6px;font-size:10.5px;font-weight:600}
   .ptag b{font-weight:700}
-  .ptag .x{cursor:pointer;color:var(--accent);opacity:.7;font-size:12px;line-height:1}
+  .ptag .x{cursor:pointer;color:var(--accent-tx);opacity:.7;font-size:12px;line-height:1}
   .ptag .x:hover{opacity:1}
   .plist{max-height:170px;overflow-y:auto;border:1px solid var(--line);border-radius:8px}
   .plist::-webkit-scrollbar{width:6px}
@@ -114,11 +135,16 @@
   .pitem .pt{font-weight:700;font-size:11px;min-width:52px}
   .pitem .pn{font-size:10px;color:var(--tx2);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pitem .pc{font-size:11px;color:var(--tx3)}
-  .pitem.sel .pc{color:var(--accent)}
+  .pitem.sel .pc{color:var(--accent-tx)}
   .hint{font-size:10px;color:var(--tx3);margin-top:6px;line-height:1.4}
-  .savebar{padding:9px 10px}
-  .savebtn{width:100%;background:var(--accent);border:none;color:#1a1400;font-size:12px;font-weight:700;
-    padding:9px;border-radius:8px}
+  /* 저장 버튼은 스크롤을 따라 내려가지 않고 설정 화면 아래에 붙어 있는다.
+     아래 그림자는 내용이 바 밑으로 지나가고 있다는 걸 보여주기 위한 것이다 */
+  .savebar{position:sticky;bottom:0;z-index:15;padding:6px 8px;
+    background:var(--bg);border-top:1px solid var(--line);
+    box-shadow:0 -8px 12px -10px rgba(0,0,0,.45)}
+  .sec:last-of-type{border-bottom:none}   /* 바의 윗선과 겹쳐 두 줄로 보이지 않게 */
+  .savebtn{width:100%;background:var(--accent);border:none;color:#1a1400;font-size:11.5px;font-weight:700;
+    padding:7px;border-radius:7px}
   .savebtn:active{opacity:.85}
 
   /* ===== 툴팁 (설정·타이틀바 아이콘) ===== */
@@ -132,7 +158,7 @@
 
   /* ===== 설정 폼 공통 ===== */
   .frow{display:flex;align-items:center;gap:8px}
-  .flabel{font-size:11px;color:var(--tx2);flex:none;width:64px}
+  .flabel{font-size:11px;color:var(--tx2);flex:none;width:64px;line-height:1.3;word-break:keep-all}
   .fctl{flex:1;display:flex;align-items:center;gap:6px;min-width:0}
 
   /* 슬라이더 + 숫자 입력 */
@@ -141,7 +167,7 @@
     background:var(--accent);cursor:pointer;border:none}
   .numwrap{display:flex;align-items:center;gap:1px;background:var(--card2);border:1px solid var(--line);
     border-radius:6px;padding:3px 5px;flex:none}
-  .numwrap:focus-within{border-color:var(--accent)}
+  .numwrap:focus-within{border-color:var(--accent-tx)}
   .num{width:28px;background:none;border:none;color:var(--tx);font-size:11px;
     font-family:var(--mono);text-align:right;outline:none;appearance:textfield}
   .num::-webkit-inner-spin-button,.num::-webkit-outer-spin-button{appearance:none;margin:0}
@@ -162,15 +188,41 @@
     border-radius:50%;background:var(--tx3);transition:.15s}
   .sw input:checked + span{background:rgba(247,166,0,.3)}
   .sw input:checked + span::after{left:14px;background:var(--accent)}
-  .swtx{font-size:10.5px;color:var(--tx3)}
+  .swtx{line-height:1.35;word-break:keep-all;font-size:10.5px;color:var(--tx3)}
 
   /* 단축키 입력 */
   .hk{flex:1;min-width:0;background:var(--card2);border:1px solid var(--line);border-radius:6px;
     padding:5px 8px;color:var(--tx);font-size:11px;font-family:var(--mono);outline:none;cursor:pointer}
   .hk::placeholder{color:var(--tx3);font-family:var(--sans)}
-  .hk.rec{border-color:var(--accent);color:var(--accent)}
+  .hk.rec{border-color:var(--accent-tx);color:var(--accent-tx)}
   .hk.bad{border-color:var(--up);color:var(--up)}
   .mini{flex:none;background:var(--card2);border:1px solid var(--line);color:var(--tx2);
     font-size:10.5px;padding:5px 7px;border-radius:6px}
   .mini:hover{color:var(--tx);border-color:var(--tx3)}
   .hint.err{color:var(--up)}
+
+  /* 설정 안의 작은 버튼 (알림 테스트 등) */
+  .btn.sm{background:var(--card2);border:1px solid var(--line);color:var(--tx);
+    font-size:11px;padding:4px 10px;border-radius:6px;font-weight:600;flex:none}
+  .btn.sm:hover{border-color:var(--accent-tx);color:var(--accent-tx)}
+  .btn.sm:active{opacity:.8}
+
+  /* 바디 드래그 도입에 따른 예외 */
+  input,textarea{user-select:text;-webkit-user-select:text}
+  .app,.body,.rows,.plist{cursor:default}
+
+  /* ===== 테마 전환 버튼 =====
+     다크일 때는 해(=라이트로 감), 라이트일 때는 달(=다크로 감)을 보여준다 */
+  #themeBtn .ic-moon{display:none}
+  [data-theme="light"] #themeBtn .ic-sun{display:none}
+  [data-theme="light"] #themeBtn .ic-moon{display:block}
+
+
+  /* 코인 선택에서 막았을 때 뜨는 안내 */
+  .pmsg{margin-top:6px;display:inline-block;
+    font-size:10.5px;font-weight:600;color:var(--accent-tx);
+    background:var(--card2);border:1px solid var(--accent-tx);
+    border-radius:7px;padding:4px 8px;
+    animation:pmsgIn .16s ease-out}
+  @keyframes pmsgIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){ .pmsg{animation:none} }

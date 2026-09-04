@@ -11,6 +11,19 @@
 
 <div class="titlebar" id="titlebar">
   <span class="brand">코인주라</span>
+  <button class="sitebtn" id="siteBtn" data-tip="브라우저에서 열기">사이트이동</button>
+  <div class="tspace"></div>
+  <button class="tbtn" id="themeBtn" data-tip="라이트 모드로 전환">
+    <svg class="ic-sun" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+      <circle cx="8" cy="8" r="3.1" fill="currentColor"/>
+      <g stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+        <path d="M8 1.1v1.7M8 13.2v1.7M14.9 8h-1.7M2.8 8H1.1M12.88 3.12l-1.2 1.2M4.32 11.68l-1.2 1.2M12.88 12.88l-1.2-1.2M4.32 4.32l-1.2-1.2"/>
+      </g>
+    </svg>
+    <svg class="ic-moon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+      <path fill="currentColor" d="M13.6 10.2A6.2 6.2 0 0 1 5.8 2.4a6.2 6.2 0 1 0 7.8 7.8z"/>
+    </svg>
+  </button>
   <button class="tbtn" id="pinBtn" data-tip="항상 위에 고정">
     <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
       <path fill="currentColor" d="M9.6 1.2a1 1 0 0 1 1.4 0l3.8 3.8a1 1 0 0 1 0 1.4l-.5.5a1 1 0 0 1-1.1.2l-1.5-.6-2.6 2.6.4 1.8a1 1 0 0 1-.3.9l-.6.6a1 1 0 0 1-1.4 0L4.6 9.9l-3 3a.7.7 0 1 1-1-1l3-3-2.5-2.6a1 1 0 0 1 0-1.4l.6-.6a1 1 0 0 1 .9-.3l1.8.4 2.6-2.6-.6-1.5a1 1 0 0 1 .2-1.1z"/>
@@ -90,8 +103,9 @@
   </div>
 
   <div class="sec">
-    <h3>표시 항목</h3>
+    <h3>시세 표시 항목</h3>
     <div class="chips" id="colChips"></div>
+    <div class="hint">위젯 표에 나오는 열입니다.</div>
   </div>
 
   <div class="sec">
@@ -105,19 +119,35 @@
       <div class="fctl"><div class="chips" id="winChips"></div></div>
     </div>
     <div class="frow" style="margin-top:8px">
+      <label class="flabel">알림 전용<br>항목</label>
+      <div class="fctl"><div class="chips" id="acolChips"></div></div>
+    </div>
+    <div class="hint">알림 창에만 적용됩니다. 위 시세 표와 별개입니다.</div>
+    <div class="frow" style="margin-top:8px">
       <label class="flabel">소리</label>
       <div class="fctl">
         <label class="sw"><input type="checkbox" id="soundChk"><span></span></label>
         <span class="swtx">짧은 알림음</span>
       </div>
     </div>
+    <div class="frow" style="margin-top:8px">
+      <label class="flabel">확인</label>
+      <div class="fctl">
+        <button class="btn sm" id="testAlertBtn">알림 테스트</button>
+        <span class="swtx" id="testAlertMsg"></span>
+      </div>
+    </div>
     <div class="hint">위젯을 숨긴 상태에서 설정한 단위만큼 움직이면 트레이에 작게 표시됩니다. 창을 강제로 띄우지 않습니다.</div>
   </div>
 
   <div class="sec">
-    <h3>코인 선택</h3>
+    <div class="sechead">
+      <h3>코인 선택</h3>
+      <button class="btn sm" id="resetCoins">선택 초기화</button>
+    </div>
     <input class="search" id="coinSearch" placeholder="심볼·이름 검색 (예: BTC, 비트코인)">
     <div class="picked" id="picked"></div>
+    <div class="pmsg" id="pickMsg" hidden></div>
     <div class="plist" id="plist"></div>
     <div class="hint">선택한 순서대로 위젯에 표시됩니다. 항목을 눌러 추가·해제하세요.</div>
   </div>

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "toast",
+  "description": "알림 창 권한 — 눌러서 닫기만 한다",
+  "windows": ["toast"],
+  "permissions": ["core:default"]
+}

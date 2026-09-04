@@ -46,6 +46,29 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: '코인주라 위젯 ${{ github.ref_name }}'
-          releaseDraft: true
+          releaseDraft: false   # 초안이면 외부에서 다운로드가 안 된다
           prerelease: false
           args: ${{ matrix.args }}
+
+      # 코인주라에 걸 다운로드 링크가 버전마다 바뀌지 않도록 고정 이름 사본을 함께 올린다.
+      # 실패해도 버전이 붙은 원본 자산은 이미 올라가 있으므로 릴리스를 막지 않는다.
+      - name: 고정 이름 자산 추가
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ github.ref_name }}"
+          out=""
+          for f in $(find src-tauri/target -name '*.dmg' -o -name '*-setup.exe'); do
+            case "$f" in
+              *aarch64*.dmg)
+                cp "$f" coinjura-widget-mac-arm64.dmg;  out="$out coinjura-widget-mac-arm64.dmg" ;;
+              *x64*.dmg|*x86_64*.dmg)
+                cp "$f" coinjura-widget-mac-intel.dmg;  out="$out coinjura-widget-mac-intel.dmg" ;;
+              *-setup.exe)
+                cp "$f" coinjura-widget-win-setup.exe;  out="$out coinjura-widget-win-setup.exe" ;;
+            esac
+          done
+          echo "업로드 대상:$out"
+          for f in $out; do gh release upload "$tag" "$f" --clobber; done

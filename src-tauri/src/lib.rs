@@ -3,7 +3,94 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, WindowEvent,
 };
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+
+/// 토스트 세대 번호. 새 토스트가 뜨면 앞선 타이머가 남의 토스트를 지우지 않도록
+/// 자기 세대가 아직 최신인지 확인하고 숨긴다.
+static TOAST_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// 위젯이 숨겨져 있을 때 화면 오른쪽 위에 잠깐 뜨는 알림 창.
+/// 줄 수만큼 창 높이를 키운다.
+#[tauri::command]
+fn show_toast(app: tauri::AppHandle, lines: Vec<serde_json::Value>, cols: Vec<String>) {
+    let Some(w) = app.get_webview_window("toast") else {
+        return;
+    };
+
+    // 너무 많으면 화면을 덮으므로 여섯 줄에서 끊는다.
+    let shown: Vec<&serde_json::Value> = lines.iter().take(6).collect();
+    if shown.is_empty() {
+        return;
+    }
+    let n = shown.len() as f64;
+
+    let js = format!(
+        "window.__cjToast && window.__cjToast({}, {})",
+        serde_json::to_string(&shown).unwrap_or_else(|_| "[]".into()),
+        serde_json::to_string(&cols).unwrap_or_else(|_| "[]".into())
+    );
+    let _ = w.eval(&js);
+
+    // 위젯이 있던 그 자리에 그대로 띄운다. 사용자의 눈이 이미 그 위치를 알고 있어서
+    // 화면 구석에 띄우는 것보다 알아채기 쉽다. 폭도 위젯에 맞춰 자리가 겹치게 한다.
+    let main = app.get_webview_window("main");
+    let mut w_logical = 300.0_f64;
+    let mut x = 0.0_f64;
+    let mut y = 0.0_f64;
+    let mut placed = false;
+
+    if let Some(m) = &main {
+        if let (Ok(pos), Ok(sz)) = (m.outer_position(), m.outer_size()) {
+            let sf = m.scale_factor().unwrap_or(1.0);
+            x = pos.x as f64 / sf;
+            y = pos.y as f64 / sf;
+            w_logical = (sz.width as f64 / sf).clamp(240.0, 460.0);
+            placed = true;
+        }
+    }
+
+    let h_logical = 14.0 + n * 20.0;
+    let _ = w.set_size(tauri::LogicalSize::new(w_logical, h_logical));
+
+    // 위젯이 놓인 모니터 밖으로 나가지 않게 붙잡아 둔다.
+    let mon = main
+        .as_ref()
+        .and_then(|m| m.current_monitor().ok().flatten())
+        .or_else(|| w.primary_monitor().ok().flatten());
+    if let Some(mon) = mon {
+        let sf = mon.scale_factor();
+        let (mp, ms) = (mon.position(), mon.size());
+        let (mx, my) = (mp.x as f64 / sf, mp.y as f64 / sf);
+        let (mw, mh) = (ms.width as f64 / sf, ms.height as f64 / sf);
+        if !placed {
+            x = mx + mw - w_logical - 14.0;
+            y = my + 40.0;
+        }
+        x = x.clamp(mx + 8.0, (mx + mw - w_logical - 8.0).max(mx + 8.0));
+        y = y.clamp(my + 8.0, (my + mh - h_logical - 8.0).max(my + 8.0));
+    }
+    let _ = w.set_position(tauri::LogicalPosition::new(x, y));
+
+    // 눌러서 닫을 수 있어야 하므로 클릭을 통과시키지 않는다.
+    let _ = w.set_ignore_cursor_events(false);
+    let _ = w.show();
+    // 창이 숨어 있는 동안에는 화면이 안 그려져 전환이 시작되지 않는다.
+    // 그래서 내용 채우기와 연출 시작을 나눠, 띄운 뒤에 연출을 건다.
+    let _ = w.eval("window.__cjPlay && window.__cjPlay()");
+
+    let gen = TOAST_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(5600));
+        if TOAST_GEN.load(Ordering::SeqCst) != gen {
+            return; // 그 사이 새 토스트가 떴다
+        }
+        if let Some(w) = app2.get_webview_window("toast") {
+            let _ = w.hide();
+        }
+    });
+}
 
 /// 창이 어느 모니터에도 충분히 걸쳐 있지 않으면 화면 중앙으로 되돌린다.
 /// 모니터 사이로 끌어 놓쳤을 때 "보이기를 눌러도 안 보이는" 상태를 막는 최후의 방어선이라
@@ -79,6 +166,15 @@ fn set_tray_text(app: tauri::AppHandle, text: String) {
 
 /// 전역 show/hide 단축키 등록. 빈 문자열이면 해제만 한다.
 /// 등록 실패(다른 앱이 선점 등)는 Err로 돌려보내 설정 화면에서 즉시 알린다.
+/// 알림을 눌렀을 때 즉시 닫는다. 세대 번호를 올려 남은 타이머를 무효로 만든다.
+#[tauri::command]
+fn hide_toast(app: tauri::AppHandle) {
+    TOAST_GEN.fetch_add(1, Ordering::SeqCst);
+    if let Some(w) = app.get_webview_window("toast") {
+        let _ = w.hide();
+    }
+}
+
 #[tauri::command]
 fn set_hotkey(app: tauri::AppHandle, accelerator: String) -> Result<(), String> {
     let gs = app.global_shortcut();
@@ -101,7 +197,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![set_tray_text, set_hotkey])
+        .invoke_handler(tauri::generate_handler![set_tray_text, set_hotkey, show_toast, hide_toast])
         .setup(|app| {
             let show_i = MenuItem::with_id(app, "show", "위젯 보기 / 숨기기", true, None::<&str>)?;
             let center_i = MenuItem::with_id(app, "center", "화면 중앙으로 되돌리기", true, None::<&str>)?;

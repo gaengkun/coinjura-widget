@@ -1,8 +1,15 @@
 // 서버가 만든 컴팩트 파일. 열(column) 방식이라 s[i] 와 pU[i] 가 같은 코인이다.
 // 시총 내림차순 정렬 상태로 온다. 김프는 사이트 계산값이 그대로 들어 있다.
+// 테마는 무엇보다 먼저 정한다. 늦게 적용하면 창이 뜨는 순간 잠깐 어둡게 번쩍인다.
+try{
+  const u0=JSON.parse(localStorage.getItem("cj_widget_ui"));
+  document.documentElement.dataset.theme=(u0&&u0.theme==="light")?"light":"dark";
+}catch(e){ document.documentElement.dataset.theme="dark"; }
+
 const API="https://coinjura.com/theme/basic/live/widget-v1.js";
 // 한글명은 거의 안 바뀌므로 따로 받아 캐시한다(1시간마다 확인).
 const API_NAMES="https://coinjura.com/theme/basic/live/widget-names.js";
+const SITE="https://coinjura.com/";
 const NAMES_TTL=3600000;
 const REFRESH=120000;
 
@@ -22,7 +29,8 @@ const COLS=[["tkr","티커"],["name","코인명"],["price","시세"],["chg","변
 
 // ---- default settings ----
 const DEFAULT={ ex:["U","B","BN","BY"], cols:["tkr","name","price","chg","kimp"], coins:["BTC","ETH","XRP","SOL","ADA"],
-                alert:0, win:"10m", sound:false };
+                alert:0, win:"10m", sound:false,
+                acols:["tkr","name","chg"] };   // 알림 창에 띄울 항목
 // 단위 = 발동 임계값이자 갱신 단위. 2% 선택 시 2,4,6,8…에서 표시가 바뀐다.
 const ALERTS=[[0,"끄기"],[1,"1%"],[2,"2%"],[3,"3%"],[4,"4%"],[5,"5%"]];
 const WINS=[["2m","2분"],["10m","10분"],["1h","1시간"],["24h","24시간"]];
@@ -153,11 +161,23 @@ try{ hist=JSON.parse(localStorage.getItem("cj_widget_hist"))||{}; }catch(e){}
 let steps={};
 try{ steps=JSON.parse(localStorage.getItem("cj_widget_steps"))||{}; }catch(e){}
 
+/**
+ * 표본 기록. 시각은 벽시계가 아니라 **데이터 생성 시각**(d.t)을 쓴다.
+ *
+ * checkAlerts 는 2분 폴링 말고도 창을 숨길 때·설정 저장 때·테스트 때 불린다.
+ * 벽시계로 찍으면 같은 세대의 데이터가 몇 초 간격으로 여러 번 쌓이고,
+ * "2분 전" 표본이 사실 지금과 같은 값이라 변동률이 0.00% 로 나온다.
+ * 세대가 바뀌었을 때만 새 표본을 남기면 그런 가짜 0 이 사라진다.
+ */
 function pushHist(sym,ex,price){
-  const k=sym+"@"+ex, now=Date.now();
+  const k=sym+"@"+ex;
+  const ts=data.t?data.t*1000:Date.now();
   const a=hist[k]||(hist[k]=[]);
-  a.push([now,price]);
+  const last=a[a.length-1];
+  if(last&&last[0]===ts){ last[1]=price; return; }   // 같은 세대면 값만 갱신
+  a.push([ts,price]);
   // 오래된 표본 정리
+  const now=Date.now();
   while(a.length && now-a[0][0]>HIST_KEEP) a.shift();
 }
 function saveHist(){
@@ -189,8 +209,9 @@ function stepOf(pct,unit,prev){
   return Math.abs(pct)>=hold?prev:s;
 }
 let beepCtx=null;
-function beep(){
-  if(!cfg.sound) return;
+// soundOn 을 주면 그 값을 따른다. 설정 화면에서 저장 전 상태로 시험할 때 쓴다.
+function beep(soundOn){
+  if(!(soundOn===undefined ? cfg.sound : soundOn)) return;
   try{
     beepCtx=beepCtx||new (window.AudioContext||window.webkitAudioContext)();
     const o=beepCtx.createOscillator(), g=beepCtx.createGain(), t=beepCtx.currentTime;
@@ -201,15 +222,49 @@ function beep(){
     o.connect(g); g.connect(beepCtx.destination); o.start(t); o.stop(t+.1);
   }catch(e){}
 }
+/* --- 급변동 알림 ---
+   위젯이 보이는 중에는 시세와 변동률이 이미 화면에 있으므로 따로 알리지 않는다.
+   숨겨져 있을 때만, 위젯이 있던 자리에 알림 창을 잠깐 띄운다. */
+async function floatToast(lines){
+  if(!IS_APP||!T.core||!lines||!lines.length) return;
+  const cols=(cfg.acols&&cfg.acols.length)?cfg.acols:["tkr","chg"];
+  try{ await T.core.invoke("show_toast",{lines,cols}); }catch(e){}
+}
+
+/** 알림 한 줄 — 시세 표와 같은 항목을 담되, 변동률은 알림 기준 시간창의 값을 쓴다. */
+function alertLine(sym,ex,pct){
+  const q=quote(sym,ex), kp=kimp(sym,ex);
+  return { sym, name:nameOf(sym),
+           px:q?fmtPx(q.price,q.cur):"—",
+           chg:chgTxt(pct),   chgCls:cls(pct),
+           kimp:kimpTxt(kp),  kimpCls:cls(kp) };
+}
+
+/**
+ * 알림 기준 거래소 — 지금 보고 있는 탭과 무관하게 코인마다 고정한다.
+ *
+ * 예전에는 활성 탭 하나만 감시해서, 탭을 옮기면 감시 대상이 통째로 바뀌었다.
+ * 그러면 (1) 보던 탭이 아닌 곳의 급변동을 놓치고, (2) 기록·단계 키가 갈려서
+ * 탭을 옮길 때마다 알림이 새로 울리거나 반대로 조용해졌다.
+ * 설정에 켜둔 거래소 순서대로 시세가 있는 첫 곳을 쓰면 탭과 무관하게 일정하다.
+ */
+function alertEx(sym){
+  for(const e of cfg.ex){ if(quote(sym,e)) return e; }
+  return null;
+}
+
 async function checkAlerts(){
   const unit=cfg.alert||0;
-  const ex=activeEx(); if(!ex) return;
-  for(const sym of cfg.coins){ const q=quote(sym,ex); if(q) pushHist(sym,ex,q.price); }
+  for(const sym of cfg.coins){
+    const ex=alertEx(sym); if(!ex) continue;
+    const q=quote(sym,ex); if(q) pushHist(sym,ex,q.price);
+  }
   saveHist();
   if(!unit){ setTray(""); return; }
 
   const hits=[]; let rang=false, dirty=false;
   for(const sym of cfg.coins){
+    const ex=alertEx(sym); if(!ex) continue;
     const pct=pctOver(sym,ex,cfg.win||"1h");
     if(pct==null) continue;
     const key=sym+"@"+ex;
@@ -224,11 +279,59 @@ async function checkAlerts(){
 
   hits.sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct));
   // 여러 개면 두 개까지만 — 길어지면 눈에 띈다
-  const txt=hits.slice(0,2).map(h=>`${h.sym} ${h.s>0?"▲":"▼"}${h.shown}%`).join("  ")
+  // 트레이 제목은 폭이 좁아 두 개까지만. 토스트는 걸린 만큼 다 보여준다.
+  const trayTxt=hits.slice(0,2).map(h=>`${h.sym} ${h.s>0?"▲":"▼"}${h.shown}%`).join("  ")
           + (hits.length>2?`  +${hits.length-2}`:"");
-  setTray(hits.length?txt:"");
-  if(rang&&hits.length) beep();
+  const lines=hits.map(h=>alertLine(h.sym,alertEx(h.sym),h.pct));
+  setTray(hits.length?trayTxt:"");
+  if(rang&&hits.length){
+    beep();
+    let vis=true; try{ vis=await appWin().isVisible(); }catch(e){}
+    if(!vis) floatToast(lines);    // 숨겨져 있을 때만 알린다
+  }
 }
+/**
+ * 알림 테스트 — 실제 급변동을 기다리지 않고 소리·트레이 표시를 바로 확인한다.
+ * 트레이 텍스트는 평소 위젯이 숨겨져 있을 때만 나오므로, 여기서는 강제로 띄운다.
+ */
+async function testAlert(){
+  const msg=$("#testAlertMsg");
+  const unit=draft.alert||1;
+  const win=draft.win||cfg.win||"1h";
+  // 실제 시세로 두 줄 미리보기 — 없으면 예시 값으로 채운다
+  const demo=(cfg.coins.slice(0,2).map(sy=>{
+    const ex=alertEx(sy); return ex?alertLine(sy,ex,pctOver(sy,ex,win)):null;
+  }).filter(Boolean));
+  if(!demo.length) demo.push({sym:"BTC",name:"비트코인",px:"—",
+                              chg:"+"+unit+".00%",chgCls:"up",kimp:"—",kimpCls:"flat"});
+  beep(draft.sound);               // 저장 전이라도 지금 켜둔 대로 시험한다
+
+  // ── 왜 안 울리는지 알 수 있게 지금 상태를 같이 보여준다 ──
+  let mon=0, ready=0, over=0;
+  for(const sym of cfg.coins){
+    const ex=alertEx(sym); if(!ex) continue;
+    mon++;
+    const pct=pctOver(sym,ex,win);
+    if(pct==null) continue;        // 짧은 창인데 기록이 아직 모자란 경우
+    ready++;
+    if(Math.abs(pct)>=unit) over++;
+  }
+  const state=`감시 ${mon}종 · 계산가능 ${ready}종 · ${unit}% 초과 ${over}종`;
+
+  if(!IS_APP||!T.core){ msg.textContent=state+" (앱에서만 알림 표시)"; return; }
+  try{
+    await floatToast(demo);          // cols 를 함께 넘겨야 하므로 직접 부르지 않는다
+    await T.core.invoke("set_tray_text",{text:"BTC ▲"+unit+"%"});
+    msg.textContent=state;
+    // 5초 뒤 한 번 더 — 그 사이 창을 닫으면 숨김 상태 그대로 확인된다
+    setTimeout(async()=>{
+      floatToast(demo);
+      try{ await T.core.invoke("set_tray_text",{text:""}); }catch(e){}
+      checkAlerts();               // 실제 상태로 되돌린다
+    },5000);
+  }catch(e){ msg.textContent="알림 실패: "+String(e).slice(0,60); }
+}
+
 async function setTray(text){
   if(!IS_APP||!T.core) return;
   // 위젯이 보이는 중이면 트레이 표시는 불필요
@@ -299,6 +402,10 @@ function renderColChips(){
   }).join("");
 }
 function renderAlertChips(){
+  $("#acolChips").innerHTML=COLS.map(([k,label])=>{
+    const on=(draft.acols||[]).includes(k);
+    return `<label class="chip ${on?"on":""}" data-acol="${k}"><input type="checkbox" ${on?"checked":""}>${label}</label>`;
+  }).join("");
   $("#alertChips").innerHTML=ALERTS.map(([v,label])=>{
     const on=(draft.alert||0)===v;
     return `<label class="chip ${on?"on":""}" data-al="${v}"><input type="checkbox" ${on?"checked":""}>${label}</label>`;
@@ -354,6 +461,13 @@ $("#colChips").addEventListener("click",e=>{
   if(i>=0){ if(draft.cols.length>1) draft.cols.splice(i,1); } else draft.cols.push(k);
   renderColChips();
 });
+$("#acolChips").addEventListener("click",e=>{
+  const l=e.target.closest(".chip"); if(!l) return;
+  const k=l.dataset.acol; const a=draft.acols||(draft.acols=[]);
+  const i=a.indexOf(k);
+  if(i>=0){ if(a.length>1) a.splice(i,1); } else a.push(k);   // 최소 한 개는 남긴다
+  renderAlertChips();
+});
 $("#alertChips").addEventListener("click",e=>{
   const l=e.target.closest(".chip"); if(!l)return; e.preventDefault();
   draft.alert=+l.dataset.al; renderAlertChips();
@@ -363,29 +477,53 @@ $("#winChips").addEventListener("click",e=>{
   draft.win=l.dataset.win; renderWinChips();
 });
 $("#soundChk").addEventListener("change",e=>{ draft.sound=e.target.checked; });
+$("#testAlertBtn").addEventListener("click",testAlert);
 $("#coinSearch").addEventListener("input",renderPicker);
+// 코인이 하나도 없으면 위젯에 보여줄 게 없으므로 마지막 한 개는 못 지운다.
+const MIN_COINS=1;
+let pickMsgT=null;
+function pickMsg(text){
+  const el=$("#pickMsg"); if(!el) return;
+  el.textContent=text; el.hidden=false;
+  clearTimeout(pickMsgT);
+  pickMsgT=setTimeout(()=>{ el.hidden=true; }, 2200);
+}
+function unpick(sym){
+  const i=draft.coins.indexOf(sym); if(i<0) return false;
+  if(draft.coins.length<=MIN_COINS){ pickMsg("코인 1개는 필수입니다"); return false; }
+  draft.coins.splice(i,1); return true;
+}
+
 $("#plist").addEventListener("click",e=>{
   const it=e.target.closest(".pitem"); if(!it)return;
-  const s=it.dataset.add; const i=draft.coins.indexOf(s);
-  if(i>=0) draft.coins.splice(i,1); else draft.coins.push(s);
+  const s=it.dataset.add;
+  if(draft.coins.includes(s)){ if(!unpick(s)) return; }
+  else draft.coins.push(s);
+  renderPicker();
+});
+// 고른 코인을 전부 지우고 비트코인 하나만 남긴다. 저장을 눌러야 실제로 적용된다.
+$("#resetCoins").addEventListener("click",()=>{
+  draft.coins=["BTC"];
   renderPicker();
 });
 $("#picked").addEventListener("click",e=>{
   const x=e.target.closest(".x"); if(!x)return;
-  const s=x.dataset.rm; const i=draft.coins.indexOf(s);
-  if(i>=0) draft.coins.splice(i,1); renderPicker();
+  if(unpick(x.dataset.rm)) renderPicker();
 });
 $("#save").addEventListener("click",()=>{
   // cols는 COLS 정의 순서로 정렬해 저장
   draft.cols=COLS.map(c=>c[0]).filter(k=>draft.cols.includes(k));
+  draft.acols=COLS.map(c=>c[0]).filter(k=>(draft.acols||[]).includes(k));
+  if(!draft.acols.length) draft.acols=["tkr","chg"];
   draft.ex=Object.keys(EX_NAME).filter(e=>draft.ex.includes(e));
   cfg={...draft}; cfg._sel=cfg.ex[0]; cfg.alert=draft.alert||0;
   cfg.win=draft.win||"1h"; cfg.sound=!!draft.sound;
+  cfg.acols=(draft.acols&&draft.acols.length)?draft.acols.slice():["tkr","chg"];
   saveCfg(cfg); render(); checkAlerts(); closeSettings();
 });
 
 /* ---------- window controls (Tauri) ---------- */
-let ui={ opa:100, layer:"top", snap:true, hotkey:"", pos:null };
+let ui={ opa:100, layer:"top", snap:true, hotkey:"", pos:null, theme:"dark" };
 try{
   const u=JSON.parse(localStorage.getItem("cj_widget_ui"));
   if(u){
@@ -408,14 +546,34 @@ function applyOpa(){
 document.getElementById("app").addEventListener("mouseenter",()=>{hovering=true;applyOpa();});
 document.getElementById("app").addEventListener("mouseleave",()=>{hovering=false;applyOpa();});
 
+/* --- 테마 --- */
+function applyTheme(){
+  const light = ui.theme==="light";
+  document.documentElement.dataset.theme = light?"light":"dark";
+  // 버튼은 "지금 무엇인지"가 아니라 "누르면 무엇이 되는지"를 보여준다
+  $("#themeBtn").dataset.tip = light?"다크 모드로 전환":"라이트 모드로 전환";
+}
+$("#themeBtn").addEventListener("click",()=>{
+  ui.theme = ui.theme==="light"?"dark":"light";
+  saveUi(); applyTheme();
+});
+
 /* --- 레이어 순위 --- */
 async function applyLayer(){
   $("#pinBtn").classList.toggle("on",ui.layer==="top");
   $("#pinBtn").dataset.tip = ui.layer==="top"?"항상 위 (켜짐)":"항상 위에 고정";
   const w=appWin(); if(!w) return;
   try{
-    await w.setAlwaysOnTop(ui.layer==="top");
-    if(typeof w.setAlwaysOnBottom==="function") await w.setAlwaysOnBottom(ui.layer==="bottom");
+    // 둘 다 창 레벨을 건드리므로 순서가 중요하다.
+    // top(true) 뒤에 bottom(false)를 부르면 레벨이 보통으로 되돌아가 "항상 위"가 풀린다.
+    // 끄는 쪽을 먼저 부르고, 켜는 쪽을 마지막에 불러야 그 상태가 남는다.
+    if(ui.layer==="bottom"){
+      await w.setAlwaysOnTop(false);
+      if(typeof w.setAlwaysOnBottom==="function") await w.setAlwaysOnBottom(true);
+    }else{
+      if(typeof w.setAlwaysOnBottom==="function") await w.setAlwaysOnBottom(false);
+      await w.setAlwaysOnTop(ui.layer==="top");
+    }
   }catch(e){}
 }
 
@@ -486,15 +644,33 @@ function rescue(x,y,w,h,need){
   return { x:Math.max(best.x,Math.min(x,best.x+best.w-w)),
            y:Math.max(best.y,Math.min(y,best.y+best.h-h)) };
 }
-let drag=null;
-$("#titlebar").addEventListener("mousedown",async e=>{
-  if(e.button!==0||e.target.closest(".tbtn")||!TW) return;
+let drag=null, dragSeq=0;
+
+/* 창은 빈 곳 아무 데나 잡아 옮길 수 있다. 조작할 수 있는 요소 위에서는 잡히면 안 된다.
+   label 은 설정의 체크박스 칩, .pitem 은 코인 목록의 한 줄, .rz 는 크기 조절 손잡이다. */
+const NODRAG="button,input,select,textarea,a,label,.rz,.pitem";
+
+// 스크롤 막대를 끌 때는 창이 아니라 목록이 움직여야 한다.
+function onScrollbar(e){
+  const el=e.target;
+  if(!(el instanceof Element)) return false;
+  const r=el.getBoundingClientRect();
+  return (el.scrollHeight>el.clientHeight && e.clientX>=r.left+el.clientWidth)
+      || (el.scrollWidth >el.clientWidth  && e.clientY>=r.top +el.clientHeight);
+}
+
+$("#app").addEventListener("mousedown",async e=>{
+  if(e.button!==0||e.target.closest(NODRAG)||onScrollbar(e)||!TW) return;
   e.preventDefault();
   const w=appWin(); if(!w) return;
+  const seq=++dragSeq;
   try{
     await loadMonitors();                       // 모니터 구성이 바뀌었을 수 있다
     const sf=await w.scaleFactor();
     const p=await w.outerPosition(), s=await w.outerSize();
+    // 준비하는 동안 이미 마우스를 뗐다면 드래그를 걸지 않는다.
+    // 안 그러면 버튼을 놓았는데도 창이 커서를 따라다닌다.
+    if(seq!==dragSeq) return;
     drag={ w, sf, mx:e.screenX, my:e.screenY,
            ox:p.x/sf, oy:p.y/sf, ww:s.width/sf, wh:s.height/sf,
            sx:{edge:null}, sy:{edge:null} };   // 축별 스냅 상태(히스테리시스용)
@@ -515,6 +691,7 @@ window.addEventListener("mousemove",e=>{
   try{ drag.w.setPosition(new TW.LogicalPosition(x,y)); }catch(err){}
 });
 window.addEventListener("mouseup",()=>{
+  dragSeq++;                                    // 준비 중이던 드래그를 취소시킨다
   if(!drag) return;
   const d=drag; drag=null;
   if(d.lx==null) return;
@@ -522,6 +699,19 @@ window.addEventListener("mouseup",()=>{
   if(r.x!==d.lx||r.y!==d.ly){ try{ d.w.setPosition(new TW.LogicalPosition(r.x,r.y)); }catch(e){} }
   ui.pos={x:r.x,y:r.y}; saveUi();
 });
+
+/* --- 사이트이동 --- 기본 브라우저에서 코인주라를 새로 연다.
+   버튼은 타이틀바 드래그 대상에서 빠져 있어서 창 옮기기와 부딪히지 않는다. */
+$("#siteBtn").addEventListener("click",openSite);
+async function openSite(){
+  try{
+    if(T&&T.opener&&T.opener.openUrl){ await T.opener.openUrl(SITE); return; }
+    if(T&&T.core){ await T.core.invoke("plugin:opener|open_url",{url:SITE}); return; }
+    window.open(SITE,"_blank");                 // 앱이 아니라 브라우저에서 열었을 때
+  }catch(e){
+    try{ window.open(SITE,"_blank"); }catch(e2){}
+  }
+}
 // 저장된 위치 복원 — 모니터 구성이 바뀌었을 수 있으니 실제 화면 안으로 끌어온다.
 // 복원 때는 겨우 걸친 상태로 되살아나면 못 찾으므로 넉넉히(80px) 요구한다.
 async function restorePos(){
@@ -638,7 +828,7 @@ if(!IS_APP){
   document.querySelector(".titlebar").style.display="none";
   document.querySelectorAll(".rz").forEach(el=>el.remove());
 }
-applyOpa(); applyLayer(); syncWinControls(); restorePos();
+applyTheme(); applyOpa(); applyLayer(); syncWinControls(); restorePos();
 if(ui.hotkey) applyHotkey(ui.hotkey);
 
 load();
