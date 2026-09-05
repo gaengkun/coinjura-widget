@@ -931,4 +931,16 @@ applyTheme(); applyOpa(); applyLayer(); syncWinControls(); restorePos();
 if(ui.hotkey) applyHotkey(ui.hotkey);
 
 load();
-setInterval(load,REFRESH);
+/* 다음 세대가 나올 시각에 맞춰 받는다.
+   고정 주기로 받으면 생성 시각과 계속 어긋나서, 이미 새 파일이 있는데도
+   최대 한 주기만큼 낡은 값을 들고 있게 된다("3분 전 기준"이 그 결과다).
+   d.t + 2분 직후를 노리면 표시되는 나이가 대개 1분 안쪽으로 붙는다. */
+const GEN_MS=120000, GEN_LAG=12000;   // 생성 주기, 파일이 퍼지는 데 두는 여유
+function scheduleLoad(){
+  const gen=data.t?data.t*1000:0;
+  let wait=gen ? (gen+GEN_MS+GEN_LAG)-Date.now() : REFRESH;
+  if(!(wait>0)) wait=15000;            // 이미 지났으면 곧 다시 확인
+  if(wait>REFRESH) wait=REFRESH;       // 아무리 늦어도 60초마다는 확인한다
+  setTimeout(async()=>{ await load(); scheduleLoad(); }, wait);
+}
+scheduleLoad();
