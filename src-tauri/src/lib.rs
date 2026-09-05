@@ -259,6 +259,22 @@ pub fn run() {
                 let _ = window.hide();
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        // Dock 아이콘 클릭 — 창을 닫아둔 상태에서 눌러도 다시 뜨게 한다.
+        // 기본 동작은 "보이는 창이 없으면 아무것도 안 함"이라, 트레이로만 되살릴 수
+        // 있었다. 알림 창(toast)은 숨은 창이지만 사용자가 되찾으려는 창이 아니므로
+        // main 만 되살린다.
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                if let Some(w) = _app.get_webview_window("main") {
+                    if !w.is_visible().unwrap_or(false) {
+                        ensure_on_screen(&w);
+                        let _ = w.show();
+                    }
+                    let _ = w.set_focus();
+                }
+            }
+        });
 }

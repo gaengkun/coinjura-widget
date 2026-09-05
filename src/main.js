@@ -11,15 +11,26 @@ const API="https://coinjura.com/theme/basic/live/widget-v1.js";
 const API_NAMES="https://coinjura.com/theme/basic/live/widget-names.js";
 const SITE="https://coinjura.com/";
 const NAMES_TTL=3600000;
-const REFRESH=120000;
+// 서버 데이터가 2분마다 바뀐다. 같은 2분으로 받으면 박자가 어긋날 때 한 세대를
+// 통째로 건너뛰어 2분 창이 계산되지 않는다. 절반 주기로 받아 매 세대를 잡는다.
+// 같은 세대는 pushHist 가 걸러내므로 표본이 중복되지는 않는다.
+const REFRESH=60000;
 
 /* ---- Tauri bridge (앱에서는 http 플러그인으로 CORS 우회, 브라우저에서는 일반 fetch) ---- */
 const T=window.__TAURI__;
 const IS_APP=!!T;
 const cjFetch=(T&&T.http&&T.http.fetch)?T.http.fetch:window.fetch.bind(window);
 const getJSON=u=>cjFetch(u,{cache:"no-store"}).then(r=>r.json());
+// 하단 문구에 실제 데이터 나이를 적는다. "약 2분 지연"은 사실이 아니었다 —
+// 위젯이 읽는 원본(kr_base)은 10분 주기라 최대 10분 넘게 벌어진다.
+function showAge(){
+  const el=document.getElementById("wfoot"); if(!el||!data.t) return;
+  const m=Math.max(0,Math.round((Date.now()-data.t*1000)/60000));
+  el.textContent="코인주라 · "+(m<1?"방금":m+"분 전")+" 기준 · 투자 참고용";
+}
 const EX_NAME={U:"업비트",B:"빗썸",BN:"바이낸스",BY:"바이비트"};
 const EX_CUR ={U:"KRW",B:"KRW",BN:"USD",BY:"USD"};
+const EX_SHORT={U:"업",B:"빗",BN:"바낸",BY:"바빗"};   // 코인 목록 배지용
 // 데이터 파일의 열 이름
 const EX_PX ={U:"pU",B:"pB",BN:"pBN",BY:"pBY"};
 const EX_CHG={U:"cU",B:"cB",BN:"cBN",BY:"cBY"};
@@ -34,6 +45,27 @@ const DEFAULT={ ex:["U","B","BN","BY"], cols:["tkr","name","price","chg","kimp"]
 // 단위 = 발동 임계값이자 갱신 단위. 2% 선택 시 2,4,6,8…에서 표시가 바뀐다.
 const ALERTS=[[0,"끄기"],[1,"1%"],[2,"2%"],[3,"3%"],[4,"4%"],[5,"5%"]];
 const WINS=[["2m","2분"],["10m","10분"],["1h","1시간"],["24h","24시간"]];
+/**
+ * 목록 설정을 정해진 값만 남기고 순서대로 정리한다. 결과가 비면 기본값으로 되돌린다.
+ *
+ * 빈 배열이 저장되면 화면이 통째로 빈다 — 표시 항목이 없으면 행은 그려지되
+ * 안에 아무 칸도 없어서, 흐린 구분선만 남은 백지가 된다. 게다가 그 상태가
+ * 그대로 저장돼 다시 켜도 같아서 사용자가 스스로 빠져나올 수 없다.
+ */
+function keepSome(v, allowed, fallback){
+  const out = allowed.filter(k => Array.isArray(v) && v.includes(k));
+  return out.length ? out : fallback.slice();
+}
+const COL_KEYS = COLS.map(c => c[0]);
+const EX_KEYS  = Object.keys(EX_NAME);
+function normCfg(c){
+  c.cols  = keepSome(c.cols,  COL_KEYS, DEFAULT.cols);
+  c.acols = keepSome(c.acols, COL_KEYS, DEFAULT.acols);
+  c.ex    = keepSome(c.ex,    EX_KEYS,  DEFAULT.ex);
+  if(!Array.isArray(c.coins) || !c.coins.length) c.coins = DEFAULT.coins.slice();
+  return c;
+}
+
 function loadCfg(){
   try{
     const c=JSON.parse(localStorage.getItem("cj_widget"));
@@ -44,7 +76,7 @@ function loadCfg(){
         if(!c.ex.length) c.ex=["U","B","BN","BY"];
         delete c._sel;
       }
-      return c;
+      return normCfg(c);   // 예전 버전이 남긴 이상한 값·빈 배열을 여기서 바로잡는다
     }
   }catch(e){}
   return JSON.parse(JSON.stringify(DEFAULT));
@@ -70,6 +102,7 @@ async function load(){
     await loadNames();
     data.all=(d.s||[]).map(sym=>({s:sym,name:nameOf(sym)}));  // 파일이 이미 시총순
     $("#dot").className="dot on";
+  showAge();
     render(); if($("#settings").classList.contains("on")) renderPicker();
     checkAlerts();
   }catch(e){
@@ -191,7 +224,12 @@ function pctOver(sym,ex,win){
   // (거래소 API 가 1h 를 주지 않아서, 서버에 넣으려면 스냅 계산이 필요하다)
   // 없는 코인만 아래 롤링 버퍼로 폴백한다.
   const a=hist[sym+"@"+ex]; if(!a||a.length<2) return null;
-  const target=Date.now()-WIN_MS[win];
+  // 기준 시점은 벽시계가 아니라 **지금 보고 있는 데이터의 생성 시각**에서 뺀다.
+  // 표본에 데이터 생성 시각을 찍어놓고 목표만 Date.now() 로 잡으면, 원본이 늦게
+  // 도착한 만큼(현재 10분 주기) 목표가 앞당겨져 바로 직전 표본이 잡히고
+  // 자기 자신과 비교해 0.00% 가 나온다.
+  const nowTs=data.t?data.t*1000:Date.now();
+  const target=nowTs-WIN_MS[win];
   let best=null,bd=Infinity;
   for(const [ts,p] of a){ const d=Math.abs(ts-target); if(d<bd){bd=d;best=p;} }
   // 기준 시점에서 너무 벗어난 표본이면 신뢰하지 않는다
@@ -262,18 +300,32 @@ async function checkAlerts(){
   saveHist();
   if(!unit){ setTray(""); return; }
 
+  const win=cfg.win||"1h";
+  /**
+   * 2분 창은 데이터 주기와 같아서 갱신마다 **겹치지 않는 새 구간**이 된다.
+   * 직전 2분에 임계값을 넘었으면 그 자체로 별개 사건이므로 매번 알린다.
+   *
+   * 단계 비교(더 큰 단계로 올라갈 때만 울림)는 24시간처럼 누적되는 값에서
+   * 같은 소식을 반복하지 않으려던 장치다. 2분 창에 그대로 쓰면 1.2% 뛴 다음
+   * 2분에 또 1.1% 뛰어도 같은 단계라 삼켜버린다.
+   * 10분·1시간 창은 구간이 겹치므로 단계 비교를 그대로 둔다.
+   */
+  const fresh=(win==="2m");
   const hits=[]; let rang=false, dirty=false;
   for(const sym of cfg.coins){
     const ex=alertEx(sym); if(!ex) continue;
-    const pct=pctOver(sym,ex,cfg.win||"1h");
+    const pct=pctOver(sym,ex,win);
     if(pct==null) continue;
     const key=sym+"@"+ex;
-    const s=stepOf(pct,unit,steps[key]==null?null:steps[key]);
-    if(s!==steps[key]){
-      if(Math.abs(s)>Math.abs(steps[key]||0)) rang=true;
-      steps[key]=s; dirty=true;
+    const prev=steps[key]==null?null:steps[key];
+    const s=stepOf(pct,unit,prev);
+    if(s!==prev){ steps[key]=s; dirty=true; }
+    if(fresh){
+      if(Math.abs(pct)>=unit){ rang=true; hits.push({sym,s,pct,shown:Math.abs(s)*unit}); }
+    }else{
+      if(s!==prev && Math.abs(s)>Math.abs(prev||0)) rang=true;
+      if(Math.abs(s)>=1) hits.push({sym,s,pct,shown:Math.abs(s)*unit});
     }
-    if(Math.abs(s)>=1) hits.push({sym,s,pct,shown:Math.abs(s)*unit});
   }
   if(dirty){ try{ localStorage.setItem("cj_widget_steps",JSON.stringify(steps)); }catch(e){} }
 
@@ -422,6 +474,15 @@ function renderPicked(){
     `<span class="ptag"><b>${s}</b>${(nameOf(s)!==s)?" "+nameOf(s):""}<span class="x" data-rm="${s}">×</span></span>`
   ).join("") || '<span style="font-size:10px;color:var(--tx3)">선택된 코인이 없습니다</span>';
 }
+/**
+ * 상장 거래소 배지. 시세가 있는 거래소만 표시한다.
+ * 켜두지 않은 거래소는 흐리게 — 고르기 전에 "내 탭에서 보이긴 하나"를 알 수 있다.
+ */
+function exBadges(sym){
+  return ["U","B","BN","BY"].filter(e=>quote(sym,e)).map(e=>
+    `<span class="xb x-${e}${draft.ex.includes(e)?"":" off"}">${EX_SHORT[e]}</span>`
+  ).join("");
+}
 function renderPicker(){
   const q=($("#coinSearch").value||"").trim().toUpperCase();
   let list=data.all;
@@ -430,7 +491,9 @@ function renderPicker(){
   $("#plist").innerHTML=list.map(c=>{
     const sel=draft.coins.includes(c.s);
     return `<div class="pitem ${sel?"sel":""}" data-add="${c.s}">
-      <span class="pt">${c.s}</span><span class="pn">${c.name}</span><span class="pc">${sel?"✓ 선택됨":"+ 추가"}</span></div>`;
+      <span class="pt">${c.s}</span><span class="pn">${c.name}</span>
+      <span class="xbs">${exBadges(c.s)}</span>
+      <span class="pc">${sel?"✓ 선택됨":"+ 추가"}</span></div>`;
   }).join("") || '<div class="empty">검색 결과 없음</div>';
   renderPicked();
 }
@@ -512,10 +575,7 @@ $("#picked").addEventListener("click",e=>{
 });
 $("#save").addEventListener("click",()=>{
   // cols는 COLS 정의 순서로 정렬해 저장
-  draft.cols=COLS.map(c=>c[0]).filter(k=>draft.cols.includes(k));
-  draft.acols=COLS.map(c=>c[0]).filter(k=>(draft.acols||[]).includes(k));
-  if(!draft.acols.length) draft.acols=["tkr","chg"];
-  draft.ex=Object.keys(EX_NAME).filter(e=>draft.ex.includes(e));
+  normCfg(draft);   // 순서 정리 + 빈 값 방지
   cfg={...draft}; cfg._sel=cfg.ex[0]; cfg.alert=draft.alert||0;
   cfg.win=draft.win||"1h"; cfg.sound=!!draft.sound;
   cfg.acols=(draft.acols&&draft.acols.length)?draft.acols.slice():["tkr","chg"];

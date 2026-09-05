@@ -219,6 +219,9 @@
 
 
   /* 코인 선택에서 막았을 때 뜨는 안내 */
+  /* hidden 속성이 이기게 먼저 못박아 둔다. 아래 display 선언이 브라우저 기본
+     [hidden]{display:none} 보다 우선순위가 높아 빈 말풍선이 남아 있었다. */
+  [hidden]{display:none !important}
   .pmsg{margin-top:6px;display:inline-block;
     font-size:10.5px;font-weight:600;color:var(--accent-tx);
     background:var(--card2);border:1px solid var(--accent-tx);
@@ -226,3 +229,13 @@
     animation:pmsgIn .16s ease-out}
   @keyframes pmsgIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion:reduce){ .pmsg{animation:none} }
+
+  /* 코인 목록의 상장 거래소 배지. 색은 거래소 탭과 같은 브랜드색을 쓴다 */
+  .xbs{display:flex;gap:3px;flex:none;margin-right:6px}
+  .xb{font-size:8.5px;font-weight:700;line-height:1;letter-spacing:-.02em;
+    padding:2px 4px;border-radius:3px;color:#1a1400;white-space:nowrap}
+  .xb.x-U{background:var(--U);color:#fff}
+  .xb.x-B{background:var(--B)}
+  .xb.x-BN{background:var(--BN)}
+  .xb.x-BY{background:var(--BY);color:#fff}
+  .xb.off{opacity:.28}          /* 설정에서 꺼둔 거래소 */
