@@ -13,7 +13,12 @@ static TOAST_GEN: AtomicU64 = AtomicU64::new(0);
 /// 위젯이 숨겨져 있을 때 화면 오른쪽 위에 잠깐 뜨는 알림 창.
 /// 줄 수만큼 창 높이를 키운다.
 #[tauri::command]
-fn show_toast(app: tauri::AppHandle, lines: Vec<serde_json::Value>, cols: Vec<String>) {
+fn show_toast(
+    app: tauri::AppHandle,
+    lines: Vec<serde_json::Value>,
+    cols: Vec<String>,
+    pos: Option<(f64, f64)>,
+) {
     let Some(w) = app.get_webview_window("toast") else {
         return;
     };
@@ -41,13 +46,19 @@ fn show_toast(app: tauri::AppHandle, lines: Vec<serde_json::Value>, cols: Vec<St
     let mut placed = false;
 
     if let Some(m) = &main {
-        if let (Ok(pos), Ok(sz)) = (m.outer_position(), m.outer_size()) {
+        if let (Ok(p), Ok(sz)) = (m.outer_position(), m.outer_size()) {
             let sf = m.scale_factor().unwrap_or(1.0);
-            x = pos.x as f64 / sf;
-            y = pos.y as f64 / sf;
+            x = p.x as f64 / sf;
+            y = p.y as f64 / sf;
             w_logical = (sz.width as f64 / sf).clamp(240.0, 460.0);
             placed = true;
         }
+    }
+    // 사용자가 알림을 끌어다 놓은 적이 있으면 그 자리를 우선한다.
+    if let Some((px, py)) = pos {
+        x = px;
+        y = py;
+        placed = true;
     }
 
     let h_logical = 14.0 + n * 20.0;
@@ -77,7 +88,7 @@ fn show_toast(app: tauri::AppHandle, lines: Vec<serde_json::Value>, cols: Vec<St
     let _ = w.show();
     // 창이 숨어 있는 동안에는 화면이 안 그려져 전환이 시작되지 않는다.
     // 그래서 내용 채우기와 연출 시작을 나눠, 띄운 뒤에 연출을 건다.
-    let _ = w.eval("window.__cjPlay && window.__cjPlay()");
+    let _ = w.eval(&format!("window.__cjPlay && window.__cjPlay({}, {})", x, y));
 
     let gen = TOAST_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let app2 = app.clone();

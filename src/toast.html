@@ -11,7 +11,7 @@
     --up:#d92d39; --down:#1f66e0;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{background:transparent;height:100%;overflow:hidden;
+  html,body{background:transparent;height:100%;overflow:hidden;cursor:grab;
     font-family:var(--sans);-webkit-font-smoothing:antialiased;user-select:none;cursor:pointer}
 
   /* 투명도는 위젯 설정을 그대로 따른다. 나타나고 사라지는 건 JS 가 transition 으로
@@ -53,13 +53,46 @@
   }
   applyTheme(readUi());
 
-  /* 눌렀을 때 — 몰래 보다가 누르면 바로 없어져야 하므로 연출 없이 즉시 지운다 */
-  document.addEventListener("click",()=>{
+  /* 누르면 닫고, 끌면 옮긴다.
+     둘 다 같은 마우스 조작이라 움직인 거리로 가른다. 4px 안쪽이면 클릭이다.
+     옮긴 자리는 저장해서 다음 알림부터 그 자리에 뜬다. */
+  const SLOP=4;
+  let base={x:0,y:0}, drag=null;
+  const TW=T&&T.window;
+
+  function closeNow(){
     clearTimeout(fadeT);
     const b=bar();
     b.style.transition="none";
     b.style.opacity="0";
     try{ T && T.core && T.core.invoke("hide_toast"); }catch(e){}
+  }
+  function savePos(x,y){
+    try{ localStorage.setItem("cj_widget_toastpos", JSON.stringify({x,y})); }catch(e){}
+  }
+
+  document.addEventListener("mousedown",e=>{
+    if(e.button!==0) return;
+    e.preventDefault();
+    drag={sx:e.screenX, sy:e.screenY, ox:base.x, oy:base.y, moved:false};
+    clearTimeout(fadeT);                 // 옮기는 동안에는 사라지지 않게
+    const b=bar();
+    b.style.transition="none";
+    b.style.opacity=String(targetOpa(readUi()));
+  });
+  window.addEventListener("mousemove",e=>{
+    if(!drag) return;
+    const dx=e.screenX-drag.sx, dy=e.screenY-drag.sy;
+    if(!drag.moved && Math.abs(dx)<=SLOP && Math.abs(dy)<=SLOP) return;
+    drag.moved=true;
+    base.x=drag.ox+dx; base.y=drag.oy+dy;
+    if(TW){ try{ TW.getCurrentWindow().setPosition(new TW.LogicalPosition(base.x,base.y)); }catch(err){} }
+  });
+  window.addEventListener("mouseup",()=>{
+    const d=drag; drag=null;
+    if(!d) return;
+    if(d.moved){ savePos(base.x,base.y); armFade(); }   // 옮겼다 → 자리 기억
+    else closeNow();                                    // 안 움직였다 → 닫기
   });
 
   /* ① Rust 가 창을 띄우기 전에 부른다 — 내용만 채우고 안 보이는 상태로 대기 */
@@ -105,15 +138,20 @@
 
   /* ② 창이 뜬 뒤에 부른다 — 창이 숨어 있는 동안에는 프레임이 안 돌아서
         여기서 시작해야 첫 알림도 제대로 스르륵 나타난다 */
-  window.__cjPlay=function(){
-    const b=bar(), opa=targetOpa(readUi());
-    b.style.transition="opacity "+IN_MS+"ms ease-out, transform "+IN_MS+"ms ease-out";
-    b.style.opacity=String(opa);          // 0 → 설정 투명도
-    b.style.transform="none";
+  function armFade(){
+    const b=bar();
     clearTimeout(fadeT);
     fadeT=setTimeout(()=>{
       b.style.transition="opacity "+OUT_MS+"ms ease-in";
       b.style.opacity="0";                // 안 누르면 서서히 사라진다
     }, HOLD_MS);
+  }
+  window.__cjPlay=function(x,y){
+    base={x:Number(x)||0, y:Number(y)||0};   // 끌 때 기준이 될 현재 위치
+    const b=bar(), opa=targetOpa(readUi());
+    b.style.transition="opacity "+IN_MS+"ms ease-out, transform "+IN_MS+"ms ease-out";
+    b.style.opacity=String(opa);          // 0 → 설정 투명도
+    b.style.transform="none";
+    armFade();
   };
 </script>

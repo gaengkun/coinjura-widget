@@ -268,7 +268,13 @@ function beep(soundOn){
 async function floatToast(lines){
   if(!IS_APP||!T.core||!lines||!lines.length) return;
   const cols=(cfg.acols&&cfg.acols.length)?cfg.acols:["tkr","chg"];
-  try{ await T.core.invoke("show_toast",{lines,cols}); }catch(e){}
+  // 알림 창을 끌어다 놓은 적이 있으면 그 자리를 그대로 쓴다(같은 출처라 값을 공유한다)
+  let pos=null;
+  try{
+    const p=JSON.parse(localStorage.getItem("cj_widget_toastpos")||"null");
+    if(p&&isFinite(p.x)&&isFinite(p.y)) pos=[p.x,p.y];
+  }catch(e){}
+  try{ await T.core.invoke("show_toast",{lines,cols,pos}); }catch(e){}
 }
 
 /** 알림 한 줄 — 시세 표와 같은 항목을 담되, 변동률은 알림 기준 시간창의 값을 쓴다. */

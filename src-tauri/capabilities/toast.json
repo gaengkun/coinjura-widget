@@ -1,7 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "toast",
-  "description": "알림 창 권한 — 눌러서 닫기만 한다",
+  "description": "알림 창 권한 — 눌러서 닫기, 끌어서 위치 옮기기",
   "windows": ["toast"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-position",
+    "core:window:allow-outer-position",
+    "core:window:allow-scale-factor"
+  ]
 }
