@@ -10,6 +10,7 @@ const API="https://coinjura.com/theme/basic/live/widget-v1.js";
 // 한글명은 거의 안 바뀌므로 따로 받아 캐시한다(1시간마다 확인).
 const API_NAMES="https://coinjura.com/theme/basic/live/widget-names.js";
 const SITE="https://coinjura.com/";
+const SITE_DL="https://coinjura.com/sub/widget.php";   // 서버가 주소를 알려주기 전까지 쓸 기본값
 const NAMES_TTL=3600000;
 // 서버 데이터가 2분마다 바뀐다. 같은 2분으로 받으면 박자가 어긋날 때 한 세대를
 // 통째로 건너뛰어 2분 창이 계산되지 않는다. 절반 주기로 받아 매 세대를 잡는다.
@@ -103,6 +104,7 @@ async function load(){
     data.all=(d.s||[]).map(sym=>({s:sym,name:nameOf(sym)}));  // 파일이 이미 시총순
     $("#dot").className="dot on";
   showAge();
+    checkUpdate();
     render(); if($("#settings").classList.contains("on")) renderPicker();
     checkAlerts();
   }catch(e){
@@ -760,16 +762,53 @@ window.addEventListener("mouseup",()=>{
   ui.pos={x:r.x,y:r.y}; saveUi();
 });
 
+/* --- 새 버전 안내 ---
+   자동 설치 대신 코인주라 다운로드 페이지로 보낸다. 서명·키가 필요 없고,
+   받으러 오는 길에 사이트를 한 번 거치게 된다.
+   비교할 최신 버전과 이동 주소는 서버(widget-v1.js 의 app 필드)가 정한다 —
+   앱을 다시 배포하지 않고도 주소를 바꿀 수 있어야 하기 때문이다. */
+let appVer=null;
+async function myVersion(){
+  if(appVer!==null) return appVer;
+  try{ appVer=(T&&T.app&&T.app.getVersion)?await T.app.getVersion():""; }
+  catch(e){ appVer=""; }
+  return appVer;
+}
+// 숫자 단위로 비교한다. 문자열 비교로는 "0.10.0" < "0.9.0" 이 돼버린다.
+function isNewer(a,b){
+  const pa=String(a||"").split(".").map(n=>parseInt(n,10)||0);
+  const pb=String(b||"").split(".").map(n=>parseInt(n,10)||0);
+  for(let i=0;i<Math.max(pa.length,pb.length);i++){
+    const x=pa[i]||0, y=pb[i]||0;
+    if(x!==y) return x>y;
+  }
+  return false;
+}
+async function checkUpdate(){
+  const btn=$("#updBtn"); if(!btn) return;
+  const info=(data.d&&data.d.app)||null;
+  if(!IS_APP||!info||!info.v){ btn.hidden=true; return; }
+  const mine=await myVersion();
+  if(!mine){ btn.hidden=true; return; }   // 버전을 못 읽으면 조용히 넘어간다
+  const need=isNewer(info.v,mine);
+  btn.hidden=!need;
+  if(need) btn.dataset.tip=`새 버전 ${info.v} 받기 (현재 ${mine})`;
+}
+$("#updBtn").addEventListener("click",()=>{
+  openSite(((data.d&&data.d.app)||{}).url||SITE_DL);
+});
+
 /* --- 사이트이동 --- 기본 브라우저에서 코인주라를 새로 연다.
    버튼은 타이틀바 드래그 대상에서 빠져 있어서 창 옮기기와 부딪히지 않는다. */
-$("#siteBtn").addEventListener("click",openSite);
-async function openSite(){
+$("#siteBtn").addEventListener("click",()=>openSite());
+async function openSite(url){
+  const u=url||SITE;
   try{
-    if(T&&T.opener&&T.opener.openUrl){ await T.opener.openUrl(SITE); return; }
-    if(T&&T.core){ await T.core.invoke("plugin:opener|open_url",{url:SITE}); return; }
-    window.open(SITE,"_blank");                 // 앱이 아니라 브라우저에서 열었을 때
+    if(T&&T.opener&&T.opener.openUrl){ await T.opener.openUrl(u); return; }
+    if(T&&T.core){ await T.core.invoke("plugin:opener|open_url",{url:u}); return; }
+    window.open(u,"_blank");                    // 앱이 아니라 브라우저에서 열었을 때
   }catch(e){
-    try{ window.open(SITE,"_blank"); }catch(e2){}
+    try{ window.open(u,"_blank"); }catch(e2){}
   }
 }
 // 저장된 위치 복원 — 모니터 구성이 바뀌었을 수 있으니 실제 화면 안으로 끌어온다.

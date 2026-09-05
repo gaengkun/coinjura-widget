@@ -239,3 +239,13 @@
   .xb.x-BN{background:var(--BN)}
   .xb.x-BY{background:var(--BY);color:#fff}
   .xb.off{opacity:.28}          /* 설정에서 꺼둔 거래소 */
+
+  /* 새 버전이 있을 때만 나오는 버튼. 눈에 띄어야 하므로 채움색을 쓴다 */
+  .updbtn{flex:none;background:var(--accent);border:1px solid var(--accent);
+    color:#1a1400;font-family:var(--sans);font-size:9.5px;font-weight:700;
+    line-height:1;letter-spacing:-.02em;padding:3px 7px;border-radius:5px;
+    cursor:pointer;margin-left:4px;animation:updIn .2s ease-out}
+  .updbtn:hover{filter:brightness(1.08)}
+  .updbtn[data-tip]::after{right:auto;left:0}
+  @keyframes updIn{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){ .updbtn{animation:none} }

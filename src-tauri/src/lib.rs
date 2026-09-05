@@ -118,11 +118,41 @@ fn ensure_on_screen(w: &tauri::WebviewWindow) {
     }
 }
 
+/// 윈도우에서 처음 숨길 때 딱 한 번, 어디로 갔는지 알려준다.
+///
+/// 윈도우 11 은 새 트레이 아이콘을 숨김 영역(^) 안에 넣는다. 밖으로 꺼내
+/// 고정하는 건 사용자가 직접 끌어야 하고 앱이 강제할 API 가 없다.
+/// 게다가 skipTaskbar 라 작업표시줄 버튼도 없어서, 모르는 사람은 실행 중인
+/// 앱을 화면 어디에서도 못 찾는다. 그 상태를 막는 최소한의 안내다.
+#[cfg(target_os = "windows")]
+fn hint_tray_once(app: &tauri::AppHandle) {
+    use tauri_plugin_notification::NotificationExt;
+    let Ok(dir) = app.path().app_config_dir() else {
+        return;
+    };
+    let marker = dir.join("tray-hint-shown");
+    if marker.exists() {
+        return;
+    }
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::write(&marker, b"1");
+    let _ = app
+        .notification()
+        .builder()
+        .title("코인주라 위젯")
+        .body("작업 표시줄 오른쪽 ^ 안에 있습니다. 아이콘을 밖으로 끌어다 놓으면 계속 보입니다.")
+        .show();
+}
+
+#[cfg(not(target_os = "windows"))]
+fn hint_tray_once(_app: &tauri::AppHandle) {}
+
 /// 위젯 창 보이기/숨기기 토글
 fn toggle_window(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         if w.is_visible().unwrap_or(false) {
             let _ = w.hide();
+            hint_tray_once(app);
         } else {
             ensure_on_screen(&w);
             let _ = w.show();
@@ -137,6 +167,7 @@ fn toggle_window_quiet(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         if w.is_visible().unwrap_or(false) {
             let _ = w.hide();
+            hint_tray_once(app);
         } else {
             ensure_on_screen(&w);
             let _ = w.show();
@@ -257,6 +288,7 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
+                hint_tray_once(window.app_handle());
             }
         })
         .build(tauri::generate_context!())
