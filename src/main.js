@@ -25,10 +25,10 @@ const getJSON=u=>cjFetch(u,{cache:"no-store"}).then(r=>r.json());
 // 하단 문구에 실제 데이터 나이를 적는다. "약 2분 지연"은 사실이 아니었다 —
 // 위젯이 읽는 원본(kr_base)은 10분 주기라 최대 10분 넘게 벌어진다.
 function showAge(){
-  const el=document.getElementById("wfoot"); if(!el||!data.t) return;
-  const m=Math.max(0,Math.round((Date.now()-data.t*1000)/60000));
-  el.textContent="코인주라 · "+(m<1?"방금":m+"분 전")+" 기준 · 투자 참고용";
+  const el=document.getElementById("wfoot"); if(!el) return;
+  el.textContent="코인주라 · 2분마다 갱신 · 투자 참고용";
 }
+
 const EX_NAME={U:"업비트",B:"빗썸",BN:"바이낸스",BY:"바이비트"};
 const EX_CUR ={U:"KRW",B:"KRW",BN:"USD",BY:"USD"};
 const EX_SHORT={U:"업",B:"빗",BN:"바낸",BY:"바빗"};   // 코인 목록 배지용
@@ -92,7 +92,12 @@ const $=s=>document.querySelector(s);
 /* ---------- fetch ---------- */
 async function load(){
   try{
-    let d=await getJSON(API);
+    // 세대 번호를 URL 에 넣는다.
+    // Cloudflare 가 stale-while-revalidate 로 낡은 사본을 그대로 내주는 바람에
+    // 새 파일이 있는데도 한 세대 전 것을 받고 있었다(실측 120초 차이).
+    // 2분 버킷을 키로 주면 세대마다 다른 주소가 되어 낡은 사본이 재사용되지 않는다.
+    // 모든 사용자가 같은 버킷 값을 쓰므로 엣지 캐시는 그대로 작동한다.
+    let d=await getJSON(API+"?g="+Math.floor(Date.now()/120000));
     // 서버가 아직 예전(행) 형식이면 열 형식으로 바꿔 읽는다.
     // 앱과 서버 배포 시점이 어긋나도 깨지지 않게 하기 위한 것으로, 서버가 넘어가면 지워도 된다.
     if(Array.isArray(d.i)) d=fromLegacy(d);
