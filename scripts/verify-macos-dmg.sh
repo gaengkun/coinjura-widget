@@ -23,5 +23,5 @@ codesign --display --verbose=2 "$cj_app"
 test -s "$cj_app/Contents/_CodeSignature/CodeResources"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$cj_app/Contents/Info.plist")" = 'com.coinjura.widget'
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$cj_app/Contents/Info.plist")" = "$cj_version"
-lipo -verify_arch arm64 "$cj_app/Contents/MacOS/coinjura-widget"
+lipo "$cj_app/Contents/MacOS/coinjura-widget" -verify_arch arm64
 echo "Verified DMG integrity, app signature, bundle ID, version and arm64 architecture."
