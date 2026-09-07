@@ -21,12 +21,34 @@ const REFRESH=60000;
 const T=window.__TAURI__;
 const IS_APP=!!T;
 const cjFetch=(T&&T.http&&T.http.fetch)?T.http.fetch:window.fetch.bind(window);
-const getJSON=u=>cjFetch(u,{cache:"no-store"}).then(r=>r.json());
-// 하단 문구에 실제 데이터 나이를 적는다. "약 2분 지연"은 사실이 아니었다 —
-// 위젯이 읽는 원본(kr_base)은 10분 주기라 최대 10분 넘게 벌어진다.
+const REQUEST_TIMEOUT=12000, STALE_MS=5*60000;
+async function getJSON(u){
+  const controller=new AbortController();
+  let timer;
+  const timeout=new Promise((_,reject)=>{
+    timer=setTimeout(()=>{ reject(new Error("요청 시간 초과")); controller.abort(); },REQUEST_TIMEOUT);
+  });
+  try{
+    return await Promise.race([(async()=>{
+      const r=await cjFetch(u,{cache:"no-store",signal:controller.signal});
+      if(!r.ok) throw new Error("HTTP "+r.status);
+      return r.json();
+    })(),timeout]);
+  }finally{ clearTimeout(timer); }
+}
+let loadFailed=false;
+function staleData(){ return !Number.isFinite(data.t)||data.t<=0||Date.now()-data.t*1000>STALE_MS; }
 function showAge(){
   const el=document.getElementById("wfoot"); if(!el) return;
-  el.textContent="코인주라 · 2분마다 갱신 · 투자 참고용";
+  if(!data.d){
+    el.textContent=loadFailed?"연결 실패 · 다시 시도 중":"코인주라 · 투자 참고용";
+    $("#dot").className=loadFailed?"dot err":"dot";
+    return;
+  }
+  const age=Math.max(0,Math.floor((Date.now()-data.t*1000)/60000));
+  const state=loadFailed?"연결 실패 · 재시도 중":staleData()?"시세 갱신 지연":"코인주라";
+  el.textContent=state+" · "+age+"분 전 데이터 · 투자 참고용";
+  $("#dot").className=loadFailed||staleData()?"dot err":"dot on";
 }
 
 const EX_NAME={U:"업비트",B:"빗썸",BN:"바이낸스",BY:"바이비트"};
@@ -101,24 +123,39 @@ async function load(){
     // 서버가 아직 예전(행) 형식이면 열 형식으로 바꿔 읽는다.
     // 앱과 서버 배포 시점이 어긋나도 깨지지 않게 하기 위한 것으로, 서버가 넘어가면 지워도 된다.
     if(Array.isArray(d.i)) d=fromLegacy(d);
-    data.d=d; data.rate=d.r||0; data.t=d.t||0;
+    if(!d||!Array.isArray(d.s)||!d.s.length||!Number.isFinite(d.t)||d.t<=0)
+      throw new Error("잘못된 시세 데이터");
+    if(data.t && d.t<data.t) throw new Error("이전 시세 데이터");
+    data.d=d; data.rate=d.r||0; data.t=d.t;
+    loadFailed=false;
     const idx={};
     (d.s||[]).forEach((sym,i)=>idx[sym]=i);
     data.idx=idx;
-    await loadNames();
+    void refreshNames();
     data.all=(d.s||[]).map(sym=>({s:sym,name:nameOf(sym)}));  // 파일이 이미 시총순
-    $("#dot").className="dot on";
-  showAge();
+    showAge();
     checkUpdate();
     render(); if($("#settings").classList.contains("on")) renderPicker();
     checkAlerts();
   }catch(e){
-    $("#dot").className="dot err";
+    loadFailed=true; showAge();
     if(!data.d) $("#rows").innerHTML='<div class="empty">데이터를 불러오지 못했습니다.</div>';
   }
 }
 
 function nameOf(s){ return data.names[s]||s; }
+
+let namesLoading=false;
+async function refreshNames(){
+  if(namesLoading) return;
+  namesLoading=true;
+  try{
+    await loadNames();
+    data.all=(data.d?.s||[]).map(sym=>({s:sym,name:nameOf(sym)}));
+    render();
+    if($("#settings").classList.contains("on")) renderPicker();
+  }finally{ namesLoading=false; }
+}
 
 // 한글명은 따로 받아 localStorage에 캐시한다. 1시간마다만 다시 확인한다.
 async function loadNames(){
@@ -151,7 +188,7 @@ function fromLegacy(d){
     o.pB.push(x[2]==="B"?x[3]:0);   o.cB.push(x[2]==="B"?x[4]:0);
     o.pBN.push(x[6]==="BN"?x[7]:0); o.cBN.push(x[6]==="BN"?x[8]:0);
     o.pBY.push(x[6]==="BY"?x[7]:0); o.cBY.push(x[6]==="BY"?x[8]:0);
-    o.h1k.push(x[5]||0); o.h1g.push(x[9]||0); o.kp.push(x[10]||0);
+    o.h1k.push(x[5]||0); o.h1g.push(x[9]||0); o.kp.push(x[10]??null);
   });
   o._names=nm;
   return o;
@@ -164,16 +201,16 @@ function quote(sym,ex){
   const i=data.idx[sym]; if(i===undefined) return null;
   const price=(d[EX_PX[ex]]||[])[i];
   if(!price) return null;
-  return { price, c24:(d[EX_CHG[ex]]||[])[i]||null, cur:EX_CUR[ex] };
+  return { price, c24:(d[EX_CHG[ex]]||[])[i]??null, cur:EX_CUR[ex] };
 }
 
 /* ---------- kimchi premium ---------- */
 // 사이트가 계산한 값을 그대로 쓴다. 어느 거래소 탭에서든 같은 값이다(사이트와 일치 보장).
-// 0 은 미산출 — 한쪽 미상장이거나 티커가 겹치는 다른 코인인 경우.
+// null 은 미산출, 0 은 실제 0%다. 서버도 미산출을 null로 보낸다.
 function kimp(sym){
   const d=data.d; if(!d) return null;
   const i=data.idx[sym]; if(i===undefined) return null;
-  return (d.kp||[])[i] || null;
+  return (d.kp||[])[i] ?? null;
 }
 function kimpTxt(v){ if(v==null)return"—"; return (v>0?"+":"")+v.toFixed(2)+"%"; }
 
@@ -304,7 +341,14 @@ function alertEx(sym){
   return null;
 }
 
+let alertedGenerations={};
+try{
+  const saved=JSON.parse(localStorage.getItem("cj_widget_alerted_generations"));
+  if(saved && typeof saved==="object" && !Array.isArray(saved)) alertedGenerations=saved;
+}catch(e){}
+
 async function checkAlerts(){
+  if(loadFailed||staleData()){ setTray(""); return; }
   const unit=cfg.alert||0;
   for(const sym of cfg.coins){
     const ex=alertEx(sym); if(!ex) continue;
@@ -324,23 +368,33 @@ async function checkAlerts(){
    * 10분·1시간 창은 구간이 겹치므로 단계 비교를 그대로 둔다.
    */
   const fresh=(win==="2m");
-  const hits=[]; let rang=false, dirty=false;
+  const hits=[]; let rang=false, dirty=false, generationsDirty=false;
   for(const sym of cfg.coins){
     const ex=alertEx(sym); if(!ex) continue;
     const pct=pctOver(sym,ex,win);
     if(pct==null) continue;
-    const key=sym+"@"+ex;
+    const key=sym+"@"+ex+"@"+win+"@"+unit;
     const prev=steps[key]==null?null:steps[key];
     const s=stepOf(pct,unit,prev);
     if(s!==prev){ steps[key]=s; dirty=true; }
     if(fresh){
-      if(Math.abs(pct)>=unit){ rang=true; hits.push({sym,s,pct,shown:Math.abs(s)*unit}); }
+      if(Math.abs(pct)>=unit){
+        const generationKey=sym+"@"+ex;
+        if(!(alertedGenerations[generationKey]>=data.t)){
+          alertedGenerations[generationKey]=data.t;
+          generationsDirty=true; rang=true;
+        }
+        hits.push({sym,s,pct,shown:Math.floor(Math.abs(pct)/unit)*unit});
+      }
     }else{
       if(s!==prev && Math.abs(s)>Math.abs(prev||0)) rang=true;
       if(Math.abs(s)>=1) hits.push({sym,s,pct,shown:Math.abs(s)*unit});
     }
   }
   if(dirty){ try{ localStorage.setItem("cj_widget_steps",JSON.stringify(steps)); }catch(e){} }
+  if(generationsDirty){
+    try{ localStorage.setItem("cj_widget_alerted_generations",JSON.stringify(alertedGenerations)); }catch(e){}
+  }
 
   hits.sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct));
   // 여러 개면 두 개까지만 — 길어지면 눈에 띈다
@@ -350,9 +404,8 @@ async function checkAlerts(){
   const lines=hits.map(h=>alertLine(h.sym,alertEx(h.sym),h.pct));
   setTray(hits.length?trayTxt:"");
   if(rang&&hits.length){
-    beep();
     let vis=true; try{ vis=await appWin().isVisible(); }catch(e){}
-    if(!vis) floatToast(lines);    // 숨겨져 있을 때만 알린다
+    if(!vis){ beep(); floatToast(lines); }    // 숨겨져 있을 때만 알린다
   }
 }
 /**
@@ -941,7 +994,6 @@ if(!IS_APP){
 applyTheme(); applyOpa(); applyLayer(); syncWinControls(); restorePos();
 if(ui.hotkey) applyHotkey(ui.hotkey);
 
-load();
 /* 다음 세대가 나올 시각에 맞춰 받는다.
    고정 주기로 받으면 생성 시각과 계속 어긋나서, 이미 새 파일이 있는데도
    최대 한 주기만큼 낡은 값을 들고 있게 된다("3분 전 기준"이 그 결과다).
@@ -954,4 +1006,5 @@ function scheduleLoad(){
   if(wait>REFRESH) wait=REFRESH;       // 아무리 늦어도 60초마다는 확인한다
   setTimeout(async()=>{ await load(); scheduleLoad(); }, wait);
 }
-scheduleLoad();
+void load().finally(scheduleLoad);
+setInterval(()=>{ showAge(); if(loadFailed||staleData()) setTray(""); },15000);
