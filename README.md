@@ -14,14 +14,15 @@ npm run tauri build    # 배포용 설치파일 생성 (맥=dmg, 윈도우=msi/e
 맥에서는 윈도우용을 만들 수 없다. 둘 중 하나.
 
 - 윈도우 PC에서 위와 똑같은 명령 실행
-- `git tag v0.1.1 && git push origin v0.1.1` → GitHub Actions가 맥(arm64·x64)과
-  윈도우를 동시에 빌드해서 릴리스 초안에 올린다 (`.github/workflows/release.yml`)
+- `tauri.conf.json` 버전과 일치하는 `v버전` 태그를 push하면 GitHub Actions가
+  맥(Apple Silicon arm64)과 윈도우를 빌드한다. 설치 파일 검증과 양쪽 고정 이름
+  자산 준비가 모두 성공한 뒤 릴리스를 공개한다 (`.github/workflows/release.yml`).
 
 빌드 결과물: `src-tauri/target/release/bundle/macos/코인주라 위젯.app`
 
-> 코드 서명은 안 했습니다. 이 맥에서 직접 빌드한 파일은 격리 속성이 안 붙어서 그냥 열립니다.
-> 다만 `.dmg`를 다른 사람에게 보내거나 다운로드로 받으면 Gatekeeper가 막으니,
-> 그때는 Finder에서 **우클릭 → 열기 → 열기** 로 한 번 허용해야 합니다.
+> Mac 앱 전체에 무료 ad-hoc 서명을 적용합니다. Apple Developer ID 서명·공증은
+> 아니므로 다운로드 후 macOS 보안 경고와 수동 허용이 필요할 수 있습니다.
+> 설치 안내와 제한 사항은 `docs/release-notes.md`를 확인하세요.
 
 ## 구조
 
@@ -106,7 +107,8 @@ gzip 5.7KB). 유저별 쿼리 파라미터 방식은 캐시 키가 유저마다 
   메뉴바 전용이라 `#[cfg(target_os = "macos")]`로 감쌌다.
 - 폰트 스택에 맥·윈도우 폰트를 같이 나열했다. `--mono`에 `Consolas`가 없으면
   윈도우에서 시세 숫자 정렬이 깨진다.
-- 코드 서명 없음 → 맥 배포는 사실상 불가 (Apple Developer 연 $99 필요).
-  윈도우는 SmartScreen 경고만 뜨고 유저가 통과시킬 수 있어 서명 없이도 배포된다.
+- Mac은 ad-hoc 서명으로 배포하며, Apple 공증은 포함하지 않는다.
+  사용자 또는 관리자의 보안 정책에 따라 실행이 제한될 수 있다.
+  Windows도 인증서 서명이 없으므로 SmartScreen 경고가 나올 수 있다.
 - 도크 아이콘 없이 메뉴바에만 띄우려면 `lib.rs`의 `setup`에서
   `app.set_activation_policy(tauri::ActivationPolicy::Accessory);` 추가.

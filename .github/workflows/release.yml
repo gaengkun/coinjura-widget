@@ -1,73 +1,102 @@
 name: release
 
-# 태그를 밀면 맥·윈도우 설치파일이 같이 만들어진다
-#   git tag v0.1.1 && git push origin v0.1.1
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:          # 수동 실행도 가능
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    permissions:
-      contents: write
+    if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest      # Apple Silicon 전용
+          - platform: macos-latest
             args: '--target aarch64-apple-darwin'
-          - platform: windows-latest    # .msi + .exe(NSIS)
+            alias: coinjura-widget-mac.dmg
+          - platform: windows-latest
             args: ''
-
+            alias: coinjura-widget-win-setup.exe
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-
+      - name: 태그와 앱 버전 일치 확인
+        shell: bash
+        run: node -e 'const c=require("./src-tauri/tauri.conf.json"); if(process.env.GITHUB_REF_NAME !== "v"+c.version) process.exit(1)'
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
-
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
-
       - run: npm ci
-
-      - uses: tauri-apps/tauri-action@v0
+      - run: npm run tauri build -- ${{ matrix.args }}
+      - name: 설치 파일 검증 및 고정 이름 준비
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CJ_RELEASE_ALIAS: ${{ matrix.alias }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          count=0
+          while IFS= read -r -d '' f; do
+            case "$f" in
+              *.dmg)
+                bash scripts/verify-macos-dmg.sh "$f" "${GITHUB_REF_NAME#v}"
+                cp "$f" "release-assets/$CJ_RELEASE_ALIAS"
+                count=$((count + 1))
+                ;;
+              *-setup.exe)
+                test -s "$f"
+                cp "$f" "release-assets/$CJ_RELEASE_ALIAS"
+                count=$((count + 1))
+                ;;
+            esac
+            cp "$f" release-assets/
+          done < <(find src-tauri/target -type f \( -name '*.dmg' -o -name '*-setup.exe' -o -name '*.msi' \) -print0)
+          test "$count" -eq 1
+          test -s "release-assets/$CJ_RELEASE_ALIAS"
+      - uses: actions/upload-artifact@v4
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: '코인주라 위젯 ${{ github.ref_name }}'
-          releaseDraft: false   # 초안이면 외부에서 다운로드가 안 된다
-          prerelease: false
-          args: ${{ matrix.args }}
+          name: installers-${{ matrix.platform }}
+          path: release-assets/*
+          if-no-files-found: error
 
-      # 코인주라에 걸 다운로드 링크가 버전마다 바뀌지 않도록 고정 이름 사본을 함께 올린다.
-      # 실패해도 버전이 붙은 원본 자산은 이미 올라가 있으므로 릴리스를 막지 않는다.
-      - name: 고정 이름 자산 추가
-        continue-on-error: true
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          path: release-assets
+          merge-multiple: true
+      - name: 양쪽 설치 파일 준비 후 공개
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="${{ github.ref_name }}"
-          # 파일 이름에 공백이 있다("Coinjura Widget_...exe"). $(find) 를 그냥 돌리면
-          # 공백에서 쪼개져 경로가 깨지므로 널 구분자로 읽는다.
-          while IFS= read -r -d '' f; do
-            case "$f" in
-              *.dmg)       cp "$f" coinjura-widget-mac.dmg ;;
-              *-setup.exe) cp "$f" coinjura-widget-win-setup.exe ;;
-            esac
-          done < <(find src-tauri/target \( -name '*.dmg' -o -name '*-setup.exe' \) -print0)
-          for f in coinjura-widget-mac.dmg coinjura-widget-win-setup.exe; do
-            if [ -f "$f" ]; then
-              echo "올림: $f"
-              gh release upload "$tag" "$f" --clobber
-            fi
-          done
+          set -euo pipefail
+          cd release-assets
+          test -s coinjura-widget-mac.dmg
+          test -s coinjura-widget-win-setup.exe
+          sha256sum -- * > SHA256SUMS.txt
+          # 모든 자산 업로드가 성공한 뒤에만 latest로 공개한다.
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
+            --title "코인주라 위젯 $GITHUB_REF_NAME" \
+            --notes-file ../docs/release-notes.md -- ./*
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
