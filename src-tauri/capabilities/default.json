@@ -27,6 +27,7 @@
     "core:window:allow-center",
     "core:window:allow-set-skip-taskbar",
     "global-shortcut:default",
+    "autostart:default",
     "opener:default",
     "notification:default",
     {

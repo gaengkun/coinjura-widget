@@ -563,11 +563,50 @@ function renderPicker(){
   }).join("") || '<div class="empty">검색 결과 없음</div>';
   renderPicked();
 }
+// OS 등록 상태를 직접 조회합니다. 로컬 저장값으로 자동 실행을 다시 켜지 않습니다.
+let cjAutostartBusy=false;
+async function cjSyncAutostart(){
+  if(cjAutostartBusy) return;
+  const input=$("#cjAutostart"), status=$("#cjAutostartStatus");
+  input.disabled=true;
+  if(!IS_APP){ status.textContent="설치한 윈도우·맥 앱에서 사용할 수 있습니다."; return; }
+  cjAutostartBusy=true;
+  try{
+    input.checked=await T.core.invoke("plugin:autostart|is_enabled");
+    status.classList.remove("err");
+    status.textContent="로그인하면 위젯이 실행됩니다. 변경은 즉시 적용됩니다. 맥은 응용 프로그램에 설치한 뒤 설정하세요.";
+    input.disabled=false;
+  }catch(e){
+    status.classList.add("err");
+    status.textContent="자동 실행 상태를 확인하지 못했습니다. 설정을 다시 열어주세요.";
+  }finally{ cjAutostartBusy=false; }
+}
+$("#cjAutostart").addEventListener("change",async()=>{
+  if(cjAutostartBusy) return;
+  const input=$("#cjAutostart"), status=$("#cjAutostartStatus"), desired=input.checked;
+  cjAutostartBusy=true;
+  input.disabled=true;
+  status.classList.remove("err");
+  status.textContent="자동 실행 설정을 적용하고 있습니다.";
+  try{
+    await T.core.invoke(desired?"plugin:autostart|enable":"plugin:autostart|disable");
+    input.checked=await T.core.invoke("plugin:autostart|is_enabled");
+    if(input.checked!==desired) throw new Error("Autostart state mismatch");
+    status.textContent=desired?"자동 실행을 켰습니다. 다음 로그인부터 위젯이 실행됩니다.":"자동 실행을 껐습니다. 다음 로그인부터 직접 실행해주세요.";
+  }catch(e){
+    try{ input.checked=await T.core.invoke("plugin:autostart|is_enabled"); }
+    catch(e){ input.checked=!desired; }
+    status.classList.add("err");
+    status.textContent="자동 실행 변경을 확인하지 못했습니다. 설정을 다시 열어 상태를 확인해주세요.";
+  }finally{ input.disabled=false; cjAutostartBusy=false; }
+});
+
 function openSettings(){
   draft=JSON.parse(JSON.stringify(cfg));
   renderExChips(); renderColChips(); renderAlertChips(); renderWinChips(); renderPicker();
   $("#soundChk").checked=!!draft.sound;
   syncWinControls();
+  void cjSyncAutostart();
   $("#main").classList.remove("on"); $("#settings").classList.add("on");
   document.querySelector(".body").scrollTop=0;
 }
