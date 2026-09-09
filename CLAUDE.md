@@ -82,7 +82,12 @@ git tag v0.7.4 && git push origin v0.7.4
 ```
 .../releases/latest/download/coinjura-widget-mac.dmg
 .../releases/latest/download/coinjura-widget-win-setup.exe
+.../releases/latest/download/coinjura-widget-win.msi
 ```
+
+`targets: "all"` 이라 윈도우는 NSIS 와 MSI 가 함께 나온다. 둘 다 고정 이름 별칭을
+붙여 올리므로 오탐 신고가 밀릴 때 MSI 쪽을 안내할 수 있다. 워크플로우는 윈도우에서
+MSI 가 정확히 하나 나왔는지 확인하고, 없으면 릴리스를 공개하지 않는다.
 
 번들 파일 이름에 공백이 있다(`Coinjura Widget_0.7.3_x64-setup.exe`). 워크플로우에서
 `find` 결과를 반드시 널 구분자로 읽어야 한다 — 공백에서 쪼개져 경로가 깨진다.
@@ -93,6 +98,32 @@ Mac 앱 전체에 무료 ad-hoc 서명(`signingIdentity: "-"`)을 적용한다. 
 배포 전 `scripts/verify-macos-dmg.sh`로 실제 DMG 내부 앱까지 검증한다.
 Mac과 Windows 자산이 모두 준비된 뒤에만 릴리스를 공개한다.
 인텔 맥은 지원하지 않는다.
+
+## 윈도우 보안 경고
+
+**코드 서명 인증서가 없다.** 그래서 SmartScreen 이 "Windows의 PC를 보호했습니다" 를
+띄우고, Defender 가 `Trojan:Win32/Wacatac.B!ml` 같은 이름으로 오탐하기도 한다.
+파일 자체는 정상이다 — UPX 같은 압축도 쓰지 않고 PE 구조도 평범하다.
+서명이 없어 만든 사람을 확인할 수 없다는 것이 유일한 이유다.
+
+평판(reputation)으로는 풀리지 않는다. 릴리스당 내려받는 수가 한 자릿수라
+SmartScreen 이 신뢰를 쌓을 만한 양이 애초에 모이지 않는다.
+
+인증서 없이 할 수 있는 것은 다 해뒀다 — MSI 병행 제공, 게시자·저작권 메타데이터,
+SHA256SUMS 공개, 릴리스 노트의 확인 절차 안내. **이것들로 경고창이 사라지지는 않는다.**
+오탐 확률을 낮추고 사용자가 파일을 스스로 검증할 수 있게 할 뿐이다.
+
+판올림할 때마다 파일 해시가 바뀌므로 오탐 신고는 매번 다시 해야 한다.
+Microsoft 오탐 신고: https://www.microsoft.com/en-us/wdsi/filesubmission
+국내 백신(알약·V3)이나 Avast 계열은 Microsoft 와 별개 DB라 업체별로 따로 신고한다.
+
+인증서를 마련하면 `src-tauri/tauri.conf.json` 의 `bundle.windows` 에 붙인다.
+스키마에 있는 키는 `certificateThumbprint`, `digestAlgorithm`, `timestampUrl`,
+`signCommand` 다. 요즘 EV 인증서는 개인키를 HSM/토큰에 두게 되어 있어 CI 에서는
+PFX 파일보다 클라우드 서명(Azure Trusted Signing, SSL.com eSigner 등)을
+`signCommand` 로 부르는 쪽이 맞다. 지문·비밀값은 저장소에 넣지 말고 Actions 비밀값으로 준다.
+
+OV 는 서명해도 평판을 쌓는 동안 경고가 남는다. 경고를 바로 없애려면 EV 여야 한다.
 
 ## 플랫폼 차이
 

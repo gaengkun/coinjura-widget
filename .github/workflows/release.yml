@@ -22,9 +22,11 @@ jobs:
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
             alias: coinjura-widget-mac.dmg
+            msi_alias: ''
           - platform: windows-latest
             args: ''
             alias: coinjura-widget-win-setup.exe
+            msi_alias: coinjura-widget-win.msi
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -46,10 +48,12 @@ jobs:
         shell: bash
         env:
           CJ_RELEASE_ALIAS: ${{ matrix.alias }}
+          CJ_MSI_ALIAS: ${{ matrix.msi_alias }}
         run: |
           set -euo pipefail
           mkdir -p release-assets
           count=0
+          msi_count=0
           while IFS= read -r -d '' f; do
             case "$f" in
               *.dmg)
@@ -62,11 +66,22 @@ jobs:
                 cp "$f" "release-assets/$CJ_RELEASE_ALIAS"
                 count=$((count + 1))
                 ;;
+              *.msi)
+                test -s "$f"
+                if [ -n "${CJ_MSI_ALIAS:-}" ]; then
+                  cp "$f" "release-assets/$CJ_MSI_ALIAS"
+                  msi_count=$((msi_count + 1))
+                fi
+                ;;
             esac
             cp "$f" release-assets/
           done < <(find src-tauri/target -type f \( -name '*.dmg' -o -name '*-setup.exe' -o -name '*.msi' \) -print0)
           test "$count" -eq 1
           test -s "release-assets/$CJ_RELEASE_ALIAS"
+          if [ -n "${CJ_MSI_ALIAS:-}" ]; then
+            test "$msi_count" -eq 1
+            test -s "release-assets/$CJ_MSI_ALIAS"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.platform }}
@@ -94,6 +109,7 @@ jobs:
           cd release-assets
           test -s coinjura-widget-mac.dmg
           test -s coinjura-widget-win-setup.exe
+          test -s coinjura-widget-win.msi
           sha256sum -- * > SHA256SUMS.txt
           # 모든 자산 업로드가 성공한 뒤에만 latest로 공개한다.
           gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
