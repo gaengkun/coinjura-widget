@@ -1,27 +1,35 @@
-## 윈도우 설치 파일 선택지 추가
+## 설치 없이 쓰는 실행 파일 추가
 
-- MSI 설치 파일을 고정 주소로 내려받을 수 있습니다.
-  기존 setup.exe(NSIS)가 백신에 오탐되는 경우 MSI 쪽을 쓰세요.
-- 설치 파일과 실행 파일에 제작자·저작권·홈페이지 정보를 넣었습니다.
-  제어판의 프로그램 목록에 게시자가 "coinjura" 로 표시됩니다.
-- Mac·Windows 설치 파일이 모두 준비된 뒤에만 최신 버전으로 공개하는 절차는 그대로입니다.
-- SHA256SUMS.txt 로 내려받은 파일의 체크섬을 확인할 수 있습니다.
+- `coinjura-widget-win-portable.exe` 하나만 받아 두 번 눌러 실행하면 됩니다.
+  설치 과정이 없고, 지우고 싶으면 파일만 지우면 됩니다.
+- 곁에 둬야 할 파일이 없습니다. 필요한 것이 전부 윈도우 기본 구성요소입니다.
+- 설치본(setup.exe)이 백신에 오탐될 때 대안으로 쓰세요.
+  설치 프로그램을 거치지 않으므로 오탐 확률이 낮습니다.
 
-기능 변화는 없습니다. 시세·알림·설정은 이전 버전과 같습니다.
+### 무설치본을 쓸 때 알아둘 점
+
+- 설정은 파일 옆이 아니라 사용자 폴더에 남습니다. 파일을 옮겨도 설정은 유지되지만
+  USB 에 담아 다른 컴퓨터에서 이어 쓰는 방식은 아닙니다.
+- 자동 실행을 켠 뒤 파일을 옮기면 자동 실행이 끊깁니다. 옮긴 자리에서 다시 켜세요.
+- WebView2 런타임이 필요합니다. 윈도우 11 은 항상 있고 윈도우 10 도 대개 있지만,
+  실행되지 않으면 설치본(setup.exe 또는 MSI)을 쓰세요.
 
 ### 다운로드
 
 ```
-.../releases/latest/download/coinjura-widget-win-setup.exe   (윈도우, NSIS)
-.../releases/latest/download/coinjura-widget-win.msi         (윈도우, MSI)
-.../releases/latest/download/coinjura-widget-mac.dmg         (Mac, Apple Silicon)
+.../releases/latest/download/coinjura-widget-win-portable.exe   (윈도우, 무설치)
+.../releases/latest/download/coinjura-widget-win.msi            (윈도우, MSI)
+.../releases/latest/download/coinjura-widget-win-setup.exe      (윈도우, 설치본)
+.../releases/latest/download/coinjura-widget-mac.dmg            (Mac, Apple Silicon)
 ```
+
+기능 변화는 없습니다. 시세·알림·설정은 이전 버전과 같습니다.
 
 ### 윈도우 보안 경고 안내
 
 이 버전은 코드 서명 인증서가 없습니다. 그래서 내려받거나 실행할 때
 "Windows의 PC를 보호했습니다" 경고가 뜨고, 백신이 오탐할 수 있습니다.
-바이러스가 아니라 서명이 없어 제작자를 확인할 수 없다는 뜻입니다.
+무설치본도 마찬가지입니다 — 설치 과정만 없앤 것이지 서명이 붙은 것은 아닙니다.
 
 설치 파일의 SHA256 값을 릴리스의 SHA256SUMS.txt 와 대조해
 같은지 확인한 경우에만 [추가 정보] → [실행] 으로 진행하세요.

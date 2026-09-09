@@ -82,6 +82,16 @@ jobs:
             test "$msi_count" -eq 1
             test -s "release-assets/$CJ_MSI_ALIAS"
           fi
+      - name: 무설치 실행 파일 준비
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 번들러가 감싸기 전의 알맹이. 이 한 파일만으로 실행된다 —
+          # 임포트가 전부 윈도우 시스템 DLL 이라 함께 둘 파일이 없다.
+          exe=src-tauri/target/release/coinjura-widget.exe
+          test -s "$exe"
+          cp "$exe" release-assets/coinjura-widget-win-portable.exe
       - uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.platform }}
@@ -110,6 +120,7 @@ jobs:
           test -s coinjura-widget-mac.dmg
           test -s coinjura-widget-win-setup.exe
           test -s coinjura-widget-win.msi
+          test -s coinjura-widget-win-portable.exe
           sha256sum -- * > SHA256SUMS.txt
           # 모든 자산 업로드가 성공한 뒤에만 latest로 공개한다.
           gh release create "$GITHUB_REF_NAME" --verify-tag --draft \

@@ -83,7 +83,19 @@ git tag v0.7.4 && git push origin v0.7.4
 .../releases/latest/download/coinjura-widget-mac.dmg
 .../releases/latest/download/coinjura-widget-win-setup.exe
 .../releases/latest/download/coinjura-widget-win.msi
+.../releases/latest/download/coinjura-widget-win-portable.exe
 ```
+
+윈도우는 무설치 실행 파일도 함께 올린다. 번들러가 감싸기 전의 알맹이를 그대로
+꺼낸 것이라 이 한 파일만으로 돈다 — 임포트가 전부 윈도우 시스템 DLL 이라
+곁에 둘 파일이 없다. NSIS 를 거치지 않으니 백신 휴리스틱에 걸릴 여지가 그만큼 준다.
+
+설정은 exe 옆이 아니라 `%LOCALAPPDATA%\com.coinjura.widget` 의 WebView2 저장소에
+남는다. 파일을 옮겨도 설정은 따라오지만 USB 로 들고 다니는 뜻의 포터블은 아니다.
+자동 실행은 등록 시점의 exe 경로를 레지스트리에 적으므로, 켜 둔 채 파일을 옮기면 끊긴다.
+
+WebView2 런타임은 필요하다. 설치본은 없으면 받아오지만 무설치본은 그러지 않는다.
+윈도우 11 은 시스템 구성요소로 항상 있고 윈도우 10 도 Edge 때문에 대개 있다.
 
 `targets: "all"` 이라 윈도우는 NSIS 와 MSI 가 함께 나온다. 둘 다 고정 이름 별칭을
 붙여 올리므로 오탐 신고가 밀릴 때 MSI 쪽을 안내할 수 있다. 워크플로우는 윈도우에서
