@@ -410,48 +410,6 @@ async function checkAlerts(){
     if(!vis){ beep(); floatToast(lines); }    // 숨겨져 있을 때만 알린다
   }
 }
-/**
- * 알림 테스트 — 실제 급변동을 기다리지 않고 소리·트레이 표시를 바로 확인한다.
- * 트레이 텍스트는 평소 위젯이 숨겨져 있을 때만 나오므로, 여기서는 강제로 띄운다.
- */
-async function testAlert(){
-  const msg=$("#testAlertMsg");
-  const unit=draft.alert||1;
-  const win=draft.win||cfg.win||"1h";
-  // 실제 시세로 두 줄 미리보기 — 없으면 예시 값으로 채운다
-  const demo=(cfg.coins.slice(0,2).map(sy=>{
-    const ex=alertEx(sy); return ex?alertLine(sy,ex,pctOver(sy,ex,win)):null;
-  }).filter(Boolean));
-  if(!demo.length) demo.push({sym:"BTC",name:"비트코인",px:"—",
-                              chg:"+"+unit+".00%",chgCls:"up",kimp:"—",kimpCls:"flat"});
-  beep(draft.sound);               // 저장 전이라도 지금 켜둔 대로 시험한다
-
-  // ── 왜 안 울리는지 알 수 있게 지금 상태를 같이 보여준다 ──
-  let mon=0, ready=0, over=0;
-  for(const sym of cfg.coins){
-    const ex=alertEx(sym); if(!ex) continue;
-    mon++;
-    const pct=pctOver(sym,ex,win);
-    if(pct==null) continue;        // 짧은 창인데 기록이 아직 모자란 경우
-    ready++;
-    if(Math.abs(pct)>=unit) over++;
-  }
-  const state=`감시 ${mon}종 · 계산가능 ${ready}종 · ${unit}% 초과 ${over}종`;
-
-  if(!IS_APP||!T.core){ msg.textContent=state+" (앱에서만 알림 표시)"; return; }
-  try{
-    await floatToast(demo);          // cols 를 함께 넘겨야 하므로 직접 부르지 않는다
-    await T.core.invoke("set_tray_text",{text:"BTC ▲"+unit+"%"});
-    msg.textContent=state;
-    // 5초 뒤 한 번 더 — 그 사이 창을 닫으면 숨김 상태 그대로 확인된다
-    setTimeout(async()=>{
-      floatToast(demo);
-      try{ await T.core.invoke("set_tray_text",{text:""}); }catch(e){}
-      checkAlerts();               // 실제 상태로 되돌린다
-    },5000);
-  }catch(e){ msg.textContent="알림 실패: "+String(e).slice(0,60); }
-}
-
 async function setTray(text){
   if(!IS_APP||!T.core) return;
   // 위젯이 보이는 중이면 트레이 표시는 불필요
@@ -647,7 +605,6 @@ $("#winChips").addEventListener("click",e=>{
   draft.win=l.dataset.win; renderWinChips();
 });
 $("#soundChk").addEventListener("change",e=>{ draft.sound=e.target.checked; });
-$("#testAlertBtn").addEventListener("click",testAlert);
 $("#coinSearch").addEventListener("input",renderPicker);
 // 코인이 하나도 없으면 위젯에 보여줄 게 없으므로 마지막 한 개는 못 지운다.
 const MIN_COINS=1;
