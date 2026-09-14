@@ -1,0 +1,33 @@
+name: store-msix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+      - run: npm ci
+      - name: Build Store executable
+        run: npm run tauri build -- --no-bundle --features store
+      - name: Validate and package MSIX
+        shell: pwsh
+        run: ./scripts/build-msix.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coinjura-widget-store-msix
+          path: |
+            dist/*.msix
+            dist/*.sha256
+          if-no-files-found: error

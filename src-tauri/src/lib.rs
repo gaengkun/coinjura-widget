@@ -1,3 +1,4 @@
+mod store;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -240,7 +241,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![set_tray_text, set_hotkey, show_toast, hide_toast])
+        .invoke_handler(tauri::generate_handler![set_tray_text, set_hotkey, show_toast, hide_toast, store::cj_is_store, store::cj_autostart])
         .setup(|app| {
             let show_i = MenuItem::with_id(app, "show", "위젯 보기 / 숨기기", true, None::<&str>)?;
             let center_i = MenuItem::with_id(app, "center", "화면 중앙으로 되돌리기", true, None::<&str>)?;

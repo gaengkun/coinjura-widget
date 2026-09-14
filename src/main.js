@@ -572,7 +572,7 @@ async function cjSyncAutostart(){
   if(!IS_APP){ status.textContent="설치한 윈도우·맥 앱에서 사용할 수 있습니다."; return; }
   cjAutostartBusy=true;
   try{
-    input.checked=await T.core.invoke("plugin:autostart|is_enabled");
+    input.checked=await T.core.invoke("cj_autostart",{enabled:null});
     status.classList.remove("err");
     status.textContent="로그인하면 위젯이 실행됩니다. 변경은 즉시 적용됩니다. 맥은 응용 프로그램에 설치한 뒤 설정하세요.";
     input.disabled=false;
@@ -589,12 +589,12 @@ $("#cjAutostart").addEventListener("change",async()=>{
   status.classList.remove("err");
   status.textContent="자동 실행 설정을 적용하고 있습니다.";
   try{
-    await T.core.invoke(desired?"plugin:autostart|enable":"plugin:autostart|disable");
-    input.checked=await T.core.invoke("plugin:autostart|is_enabled");
+    await T.core.invoke("cj_autostart",{enabled:desired});
+    input.checked=await T.core.invoke("cj_autostart",{enabled:null});
     if(input.checked!==desired) throw new Error("Autostart state mismatch");
     status.textContent=desired?"자동 실행을 켰습니다. 다음 로그인부터 위젯이 실행됩니다.":"자동 실행을 껐습니다. 다음 로그인부터 직접 실행해주세요.";
   }catch(e){
-    try{ input.checked=await T.core.invoke("plugin:autostart|is_enabled"); }
+    try{ input.checked=await T.core.invoke("cj_autostart",{enabled:null}); }
     catch(e){ input.checked=!desired; }
     status.classList.add("err");
     status.textContent="자동 실행 변경을 확인하지 못했습니다. 설정을 다시 열어 상태를 확인해주세요.";
@@ -897,7 +897,13 @@ async function checkUpdate(){
   btn.hidden=!need;
   if(need) btn.dataset.tip=`새 버전 ${info.v} 받기 (현재 ${mine})`;
 }
-$("#updBtn").addEventListener("click",()=>{
+$("#updBtn").addEventListener("click",async()=>{
+  try{
+    if(IS_APP && await T.core.invoke("cj_is_store")){
+      await openSite("https://apps.microsoft.com/detail/9PFZK8Q5G2QM");
+      return;
+    }
+  }catch(e){ return; }
   openSite(((data.d&&data.d.app)||{}).url||SITE_DL);
 });
 
