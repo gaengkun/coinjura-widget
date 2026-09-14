@@ -1,45 +1,15 @@
-## 설치 없이 쓰는 실행 파일 추가
+## v0.7.10 시세 갱신 안내 개선
 
-- `coinjura-widget-win-portable.exe` 하나만 받아 두 번 눌러 실행하면 됩니다.
-  설치 과정이 없고, 지우고 싶으면 파일만 지우면 됩니다.
-- 곁에 둬야 할 파일이 없습니다. 필요한 것이 전부 윈도우 기본 구성요소입니다.
-- 설치본(setup.exe)이 백신에 오탐될 때 대안으로 쓰세요.
-  설치 프로그램을 거치지 않으므로 오탐 확률이 낮습니다.
-
-### 무설치본을 쓸 때 알아둘 점
-
-- 설정은 파일 옆이 아니라 사용자 폴더에 남습니다. 파일을 옮겨도 설정은 유지되지만
-  USB 에 담아 다른 컴퓨터에서 이어 쓰는 방식은 아닙니다.
-- 자동 실행을 켠 뒤 파일을 옮기면 자동 실행이 끊깁니다. 옮긴 자리에서 다시 켜세요.
-- WebView2 런타임이 필요합니다. 윈도우 11 은 항상 있고 윈도우 10 도 대개 있지만,
-  실행되지 않으면 설치본(setup.exe 또는 MSI)을 쓰세요.
+- 정상 상태의 하단 문구를 “코인주라 · 2분마다 갱신 · 투자 참고용”으로 변경했습니다.
+- 데이터 지연이나 연결 실패 시에는 오류 상태와 데이터 경과 시간을 계속 표시합니다.
+- 실제 시세 갱신 주기는 기존과 같습니다.
 
 ### 다운로드
 
-```
-.../releases/latest/download/coinjura-widget-win-portable.exe   (윈도우, 무설치)
-.../releases/latest/download/coinjura-widget-win.msi            (윈도우, MSI)
-.../releases/latest/download/coinjura-widget-win-setup.exe      (윈도우, 설치본)
-.../releases/latest/download/coinjura-widget-mac.dmg            (Mac, Apple Silicon)
-```
+- Windows 무설치: coinjura-widget-win-portable.exe
+- Windows 설치: coinjura-widget-win-setup.exe 또는 coinjura-widget-win.msi
+- Mac Apple Silicon: coinjura-widget-mac.dmg
 
-기능 변화는 없습니다. 시세·알림·설정은 이전 버전과 같습니다.
+Windows 무설치본은 Microsoft WebView2 런타임이 필요합니다. 기존 위젯을 종료한 뒤 파일을 교체하세요. 자동 실행을 사용한다면 실행 파일의 위치를 유지하세요.
 
-### 윈도우 보안 경고 안내
-
-이 버전은 코드 서명 인증서가 없습니다. 그래서 내려받거나 실행할 때
-"Windows의 PC를 보호했습니다" 경고가 뜨고, 백신이 오탐할 수 있습니다.
-무설치본도 마찬가지입니다 — 설치 과정만 없앤 것이지 서명이 붙은 것은 아닙니다.
-
-설치 파일의 SHA256 값을 릴리스의 SHA256SUMS.txt 와 대조해
-같은지 확인한 경우에만 [추가 정보] → [실행] 으로 진행하세요.
-값이 다르면 실행하지 말고 다시 내려받으세요.
-백신을 끄거나 검사 제외 목록에 넣는 방법은 권장하지 않습니다.
-
-### Mac 설치 안내
-
-이 버전은 무료 ad-hoc 서명이며 Apple Developer ID 서명·공증 버전은 아닙니다.
-macOS에서 개발자를 확인할 수 없다는 경고가 남을 수 있습니다.
-출처와 파일을 확인한 경우에만 시스템 설정 → 개인정보 보호 및 보안에서 해당 앱의 열기 허용 옵션을 확인하세요.
-기기 보안 정책에 따라 허용되지 않을 수 있으며 모든 Mac에서 실행을 보장하지 않습니다.
-Gatekeeper 비활성화나 격리 속성 일괄 삭제는 권장하지 않습니다.
+Mac 배포본은 ad-hoc 서명이며 Apple 공증 버전은 아닙니다. Intel Mac은 지원하지 않습니다.

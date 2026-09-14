@@ -47,7 +47,9 @@ function showAge(){
   }
   const age=Math.max(0,Math.floor((Date.now()-data.t*1000)/60000));
   const state=loadFailed?"연결 실패 · 재시도 중":staleData()?"시세 갱신 지연":"코인주라";
-  el.textContent=state+" · "+age+"분 전 데이터 · 투자 참고용";
+  el.textContent=loadFailed||staleData()
+    ?state+" · "+age+"분 전 데이터 · 투자 참고용"
+    :"코인주라 · 2분마다 갱신 · 투자 참고용";
   $("#dot").className=loadFailed||staleData()?"dot err":"dot on";
 }
 
