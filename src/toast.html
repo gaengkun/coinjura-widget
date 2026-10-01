@@ -21,11 +21,12 @@
     padding:6px 10px;box-shadow:0 8px 22px -8px rgba(0,0,0,.6);
     opacity:0}
 
-  /* 현재 값은 한 줄에, 이전 기록은 작은 보조 줄에. Rust 창 높이도 행당 36px이다. */
-  .ln{display:flex;flex-direction:column;justify-content:center;height:34px;flex:none;color:var(--tx)}
-  .ln+.ln{border-top:1px solid var(--tx2)}
+  /* 거래소별 한 줄. 행 23px + 간격 2px을 Rust 창 높이에도 반영한다. */
+  .ln{display:flex;align-items:center;height:23px;padding:2px 0;flex:none;color:var(--tx)}
+  .ln+.ln{border-top:1px solid color-mix(in srgb,var(--tx2) 50%,transparent)}
   .cj-toast-head{display:flex;align-items:center;gap:6px;min-height:18px}
-  .cj-toast-baseline{font-size:9px;line-height:14px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cj-toast-head{width:100%}
+  .cj-toast-old{font-size:10.5px;color:var(--tx2)}
   .cj-toast-ex{font-size:9px;font-weight:700;line-height:1;padding:3px 5px;
     border-radius:4px;white-space:nowrap;flex:none;color:var(--tx);background:var(--card)}
   .cj-toast-ex[data-exchange="업비트"]{background:#3d5afe;color:#fff}
@@ -38,7 +39,7 @@
   .px{font-family:var(--mono);font-size:10.5px;font-weight:600;white-space:nowrap;flex:none}
   .cg{text-align:right;font-family:var(--mono);font-size:12px;font-weight:700;white-space:nowrap;flex:none}
   .kp{text-align:right;font-family:var(--mono);font-size:10.5px;color:var(--tx2)}
-  .up{color:var(--up)} .down{color:var(--down)}
+  .up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--tx2)}
 </style>
 
 <div class="bar" id="bar"></div>
@@ -134,15 +135,19 @@
         price.title="현재 가격"; head.appendChild(price);
       }
       if(cs.includes("chg")){
-        const change=cell("div","cg "+(it.chgCls||""),it.chg||"—");
-        change.title="현재 거래소 변동률"; head.appendChild(change);
+        const before=Number.isFinite(it.beforeRate)?it.beforeRate:null;
+        const baseline=cell("div","cg cj-toast-old",before===null?"—":(before>0?"+":"")+Number(before.toFixed(2))+"%");
+        baseline.title=(it.beforeLabel||"이전")+" 거래소 변동률 · 현재 "+(it.chg||"—");
+        head.appendChild(baseline);
+        const delta=Number.isFinite(it.changeDelta)?it.changeDelta:null;
+        const change=cell("div","cg "+(delta>0?"up":delta<0?"down":"flat"),"");
+        change.appendChild(cell("span","cj-toast-old","| "));
+        change.appendChild(cell("span","",delta===null?"—":delta===0?"0%":(delta>0?"↑+":"↓")+delta+"%"));
+        change.title=(it.beforeLabel||"이전")+" 대비 거래소 변동률 변화";
+        head.appendChild(change);
       }
       if(cs.includes("kimp")) head.appendChild(cell("div","kp "+(it.kimpCls||""),"김프 "+(it.kimp||"—")));
       row.appendChild(head);
-      if(cs.includes("chg")) row.appendChild(cell("div","cj-toast-baseline",
-        it.beforeChg && it.beforeChg!=="—"
-          ?(it.beforeLabel||"이전")+" "+it.beforeChg+" → 현재 "+(it.chg||"—")
-          :"이전 변동률 기록 없음"));
       b.appendChild(row);
     }
     clearTimeout(fadeT);

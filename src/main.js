@@ -352,10 +352,13 @@ function alertLine(sym,ex){
   const q=quote(sym,ex), kp=kimp(sym,ex);
   const base=cjAlertBaseline(sym,ex,cfg.win||"1h");
   const minutes=base?Math.max(1,Math.round((data.t*1000-base[0])/60000)):null;
+  const beforeRate=Number.isFinite(base?.[2])?base[2]:null;
+  const changeDelta=beforeRate!==null && Number.isFinite(q?.c24)?Math.round((q.c24-beforeRate)*100)/100:null;
   return { sym, name:nameOf(sym), exchange:EX_NAME[ex], exchangeShort:EX_SHORT[ex],
            px:q?fmtPx(q.price,q.cur)+(q.cur==="KRW"?"원":""):"—",
            chg:chgTxt(q?.c24), chgCls:cls(q?.c24),
            beforeChg:chgTxt(base?.[2]), beforeLabel:minutes?minutes+"분 전":"이전",
+           beforeRate, changeDelta,
            kimp:kimpTxt(kp),  kimpCls:cls(kp) };
 }
 

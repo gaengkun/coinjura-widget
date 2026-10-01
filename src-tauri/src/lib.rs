@@ -65,7 +65,7 @@ fn show_toast(
         placed = true;
     }
 
-    let h_logical = 14.0 + n * 36.0;
+    let h_logical = 12.0 + n * 25.0;
     let _ = w.set_size(tauri::LogicalSize::new(w_logical, h_logical));
 
     // 위젯이 놓인 모니터 밖으로 나가지 않게 붙잡아 둔다.

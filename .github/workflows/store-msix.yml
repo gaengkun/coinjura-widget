@@ -19,6 +19,7 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
       - run: npm ci
+      - run: node scripts/check-exchange-picker.mjs
       - name: Build Store executable
         run: npm run tauri build -- --no-bundle --features store
       - name: Validate and package MSIX

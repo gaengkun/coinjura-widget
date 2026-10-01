@@ -100,6 +100,7 @@ run(`
 `);
 assert.equal(run('alertLine("BTC","U").chg'),"+29.00%");
 assert.equal(run('alertLine("BTC","U").beforeChg'),"+24.00%");
+assert.equal(run('alertLine("BTC","U").changeDelta'),5);
 assert.equal(run('alertLine("BTC","U").beforeLabel'),"2분 전");
 assert.equal(run('alertLine("BTC","U").px'),"129원");
 assert(Math.abs(run('pctOver("BTC","U","2m")')-5/124*100)<1e-8);
@@ -107,6 +108,7 @@ run('pushHist("BTC","U",129,29)');
 assert.equal(run('hist["BTC@U"].length'),2);
 run('hist["BTC@U"][0]=[data.t*1000-120000,124]');
 assert.equal(run('alertLine("BTC","U").beforeChg'),"—"); // Legacy prices cannot prove an old exchange rate.
+assert.equal(run('alertLine("BTC","U").changeDelta'),null);
 run('hist["BTC@U"][0]=[data.t*1000-600000,124,24]');
 assert.equal(run('cjAlertBaseline("BTC","U","2m")'),null);
 assert.equal(run('pctOver("BTC","U","24h")'),29);
@@ -155,7 +157,7 @@ vm.runInNewContext(toast.match(/<script>([\s\S]*?)<\/script>/)[1],{
 });
 for(const [key,exchange,exchangeShort] of [["U","업비트","업"],["B","빗썸","빗"],["BN","바이낸스","바낸"],["BY","바이비트","바빗"]]){
   assert.equal(run(`alertLine("BTC","${key}",1).exchangeShort`),exchangeShort);
-  toastWindow.__cjToast([{sym:"BTC",name:"비트코인",exchange,exchangeShort,px:"113,670,000원",chg:"+29.00%",beforeChg:"+24.00%",beforeLabel:"2분 전"}],["tkr","name","price","chg"]);
+  toastWindow.__cjToast([{sym:"BTC",name:"비트코인",exchange,exchangeShort,px:"113,670,000원",chg:"+29.00%",beforeRate:24,changeDelta:5,beforeLabel:"2분 전"}],["tkr","name","price","chg"]);
   const row=toastBar.children.at(-1);
   const coin=row.children[0].children[0], badge=coin.children.at(-1);
   assert.equal(coin.children[0].textContent,"BTC");
@@ -165,13 +167,23 @@ for(const [key,exchange,exchangeShort] of [["U","업비트","업"],["B","빗썸"
   assert.equal(badge.dataset.exchange,exchange);
   assert.equal(badge.title,exchange);
   assert.equal(row.children[0].children[1].textContent,"113,670,000원");
-  assert.equal(row.children[0].children[2].textContent,"+29.00%");
-  assert.equal(row.children[0].children[2].title,"현재 거래소 변동률");
-  assert.equal(row.children[1].textContent,"2분 전 +24.00% → 현재 +29.00%");
+  assert.equal(row.children.length,1);
+  assert.equal(row.children[0].children[2].textContent,"+24%");
+  assert.equal(row.children[0].children[2].title,"2분 전 거래소 변동률 · 현재 +29.00%");
+  assert.equal(row.children[0].children[3].children[0].textContent,"| ");
+  assert.equal(row.children[0].children[3].children[0].className,"cj-toast-old");
+  assert.equal(row.children[0].children[3].children[1].textContent,"↑+5%");
 }
 toastWindow.__cjToast([{exchange:"업비트",chg:"+1.00%"}],["chg"]);
 assert.equal(toastBar.children.at(-1).children[0].children[0].children[0].textContent,"업비트");
-assert.equal(toastBar.children.at(-1).children.at(-1).textContent,"이전 변동률 기록 없음");
+assert.equal(toastBar.children.at(-1).children[0].children.at(-1).children[1].textContent,"—");
+for(const [delta,text,color] of [[0,"0%","flat"],[-7,"↓-7%","down"],[12,"↑+12%","up"]]){
+  toastWindow.__cjToast([{sym:"STX",beforeRate:-3,changeDelta:delta}],["tkr","chg"]);
+  const head=toastBar.children.at(-1).children[0];
+  assert.equal(head.children[1].textContent,"-3%");
+  assert.equal(head.children[2].children[1].textContent,text);
+  assert.equal(head.children[2].className,"cg "+color);
+}
 toastWindow.__cjPlay(0,0);
 assert.equal(fadeScheduled,1); // Packaged alerts retain their normal auto-hide behavior.
 assert.equal(fadeDelay,2800);
@@ -223,6 +235,8 @@ for(const [saved,expected] of [[null,"bottom"],[{layer:"normal"},"bottom"],[{lay
   assert.equal(field("#pinBtn")["aria-pressed"],"false");
 }
 const nativeWindows=JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json",import.meta.url),"utf8")).app.windows;
+const appVersion=JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json",import.meta.url),"utf8")).version;
+assert(readFileSync(new URL("../store/AppxManifest.xml",import.meta.url),"utf8").includes('Version="'+appVersion+'.0"'));
 assert.equal(nativeWindows.find(window=>window.label==="main").alwaysOnTop,false);
 assert.equal(nativeWindows.find(window=>window.label==="main").alwaysOnBottom,true);
 assert.equal(nativeWindows.find(window=>window.label==="toast").alwaysOnTop,true);
