@@ -25,7 +25,7 @@
       <path fill="currentColor" d="M13.6 10.2A6.2 6.2 0 0 1 5.8 2.4a6.2 6.2 0 1 0 7.8 7.8z"/>
     </svg>
   </button>
-  <button class="tbtn" id="pinBtn" data-tip="항상 위에 고정">
+  <button class="tbtn" id="pinBtn" data-tip="항상 뒤 (고정 꺼짐) · 누르면 항상 위" aria-pressed="false">
     <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
       <path fill="currentColor" d="M9.6 1.2a1 1 0 0 1 1.4 0l3.8 3.8a1 1 0 0 1 0 1.4l-.5.5a1 1 0 0 1-1.1.2l-1.5-.6-2.6 2.6.4 1.8a1 1 0 0 1-.3.9l-.6.6a1 1 0 0 1-1.4 0L4.6 9.9l-3 3a.7.7 0 1 1-1-1l3-3-2.5-2.6a1 1 0 0 1 0-1.4l.6-.6a1 1 0 0 1 .9-.3l1.8.4 2.6-2.6-.6-1.5a1 1 0 0 1 .2-1.1z"/>
     </svg>
@@ -82,12 +82,11 @@
       <div class="fctl">
         <div class="seg" id="layerSeg">
           <button data-layer="top">항상 위</button>
-          <button data-layer="normal">일반</button>
           <button data-layer="bottom">항상 뒤</button>
         </div>
       </div>
     </div>
-    <div class="hint">화면 공유·발표 전에는 '일반'으로 바꾸거나 위젯을 숨겨주세요.</div>
+    <div class="hint">고정 아이콘을 켜면 항상 위, 끄면 항상 뒤로 표시됩니다.</div>
 
     <div class="frow" style="margin-top:9px">
       <label class="flabel">가장자리 자석</label>
@@ -130,7 +129,13 @@
       <label class="flabel">알림 전용<br>항목</label>
       <div class="fctl"><div class="chips" id="acolChips"></div></div>
     </div>
-    <div class="hint">알림 창에만 적용됩니다. 위 시세 표와 별개입니다.</div>
+    <div class="hint">알림 창에만 적용됩니다. 변동률은 현재 거래소 값과 이전 기록을 보여줍니다.</div>
+    <div class="frow" style="margin-top:8px">
+      <label class="flabel" for="cjAlertSeconds">알림 노출 시간</label>
+      <div class="fctl">
+        <div class="numwrap"><input type="text" class="num" id="cjAlertSeconds" inputmode="numeric" pattern="[0-9]+" maxlength="5" required value="3" title="1~86400초"><span class="unit">초</span></div>
+      </div>
+    </div>
     <div class="frow" style="margin-top:8px">
       <label class="flabel">소리</label>
       <div class="fctl">
@@ -143,19 +148,19 @@
 
   <div class="sec">
     <h3>거래소</h3>
-    <div class="chips" id="exChips"></div>
+    <div class="chips" id="exChips" role="radiogroup" aria-label="코인을 선택할 거래소"></div>
   </div>
 
   <div class="sec">
     <div class="sechead">
-      <h3>코인 선택</h3>
+      <h3 id="cjCoinPickerTitle" aria-live="polite">업비트로 보실 코인을 선택해주세요</h3>
       <button class="btn sm" id="resetCoins">선택 초기화</button>
     </div>
-    <input class="search" id="coinSearch" placeholder="심볼·이름 검색 (예: BTC, 비트코인)">
+    <input class="search" id="coinSearch" aria-labelledby="cjCoinPickerTitle" placeholder="심볼·이름 검색 (예: BTC, 비트코인)">
     <div class="picked" id="picked"></div>
     <div class="pmsg" id="pickMsg" hidden></div>
     <div class="plist" id="plist"></div>
-    <div class="hint">선택한 순서대로 위젯에 표시됩니다. 항목을 눌러 추가·해제하세요.<br>배지는 상장 거래소입니다 — 업(업비트)·빗(빗썸)·바낸(바이낸스)·바빗(바이비트). 흐린 배지는 설정에서 꺼둔 거래소입니다.</div>
+    <div class="hint">선택한 거래소의 코인만 표시됩니다. 항목을 눌러 추가·해제하세요. 선택은 거래소별로 저장됩니다.</div>
   </div>
 
   <div class="savebar">

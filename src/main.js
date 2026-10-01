@@ -55,7 +55,7 @@ function showAge(){
 
 const EX_NAME={U:"업비트",B:"빗썸",BN:"바이낸스",BY:"바이비트"};
 const EX_CUR ={U:"KRW",B:"KRW",BN:"USD",BY:"USD"};
-const EX_SHORT={U:"업",B:"빗",BN:"바낸",BY:"바빗"};   // 코인 목록 배지용
+const EX_SHORT={U:"업",B:"빗",BN:"바낸",BY:"바빗"};   // 알림 거래소 라벨
 // 데이터 파일의 열 이름
 const EX_PX ={U:"pU",B:"pB",BN:"pBN",BY:"pBY"};
 const EX_CHG={U:"cU",B:"cB",BN:"cBN",BY:"cBY"};
@@ -64,9 +64,9 @@ const COLS=[["tkr","티커"],["name","코인명"],["price","시세"],["chg","변
 
 
 // ---- default settings ----
-const DEFAULT={ ex:["U","B","BN","BY"], cols:["tkr","name","price","chg","kimp"], coins:["BTC","ETH","XRP","SOL","ADA"],
-                alert:0, win:"10m", sound:false,
-                acols:["tkr","name","chg"] };   // 알림 창에 띄울 항목
+const DEFAULT={ ex:["U"], cols:["tkr","name","price","chg","kimp"], coins:["BTC","ETH","XRP","SOL","ADA"],
+                alert:0, win:"10m", sound:false, alertSeconds:3,
+                acols:["tkr","name","price","chg"] };   // 알림 창에 띄울 항목
 // 단위 = 발동 임계값이자 갱신 단위. 2% 선택 시 2,4,6,8…에서 표시가 바뀐다.
 const ALERTS=[[0,"끄기"],[1,"1%"],[2,"2%"],[3,"3%"],[4,"4%"],[5,"5%"]];
 const WINS=[["2m","2분"],["10m","10분"],["1h","1시간"],["24h","24시간"]];
@@ -83,11 +83,24 @@ function keepSome(v, allowed, fallback){
 }
 const COL_KEYS = COLS.map(c => c[0]);
 const EX_KEYS  = Object.keys(EX_NAME);
+function cjAlertSeconds(value){
+  return /^\d+$/.test(String(value)) && Number(value)>=1 && Number(value)<=86400 ? Number(value) : null;
+}
 function normCfg(c){
+  c.alertSeconds=cjAlertSeconds(c.alertSeconds)??DEFAULT.alertSeconds;
   c.cols  = keepSome(c.cols,  COL_KEYS, DEFAULT.cols);
   c.acols = keepSome(c.acols, COL_KEYS, DEFAULT.acols);
   c.ex    = keepSome(c.ex,    EX_KEYS,  DEFAULT.ex);
   if(!Array.isArray(c.coins) || !c.coins.length) c.coins = DEFAULT.coins.slice();
+  // 구버전의 공통 관심 목록은 사용하던 거래소에 이관한다.
+  const lists=c.coinsByEx && typeof c.coinsByEx==="object" && !Array.isArray(c.coinsByEx)
+    ?c.coinsByEx:Object.fromEntries(c.ex.map(ex=>[ex,c.coins]));
+  c.coinsByEx=Object.fromEntries(EX_KEYS.map(ex=>[ex,
+    [...new Set((Array.isArray(lists[ex])?lists[ex]:[]).filter(s=>typeof s==="string" && /^[A-Z0-9._-]+$/.test(s)))]
+  ]));
+  c.ex=EX_KEYS.filter(ex=>c.coinsByEx[ex].length);
+  if(!c.ex.length){ c.ex=["U"]; c.coinsByEx.U=DEFAULT.coins.slice(); }
+  c.coins=[...new Set(c.ex.flatMap(ex=>c.coinsByEx[ex]))];
   return c;
 }
 
@@ -104,7 +117,7 @@ function loadCfg(){
       return normCfg(c);   // 예전 버전이 남긴 이상한 값·빈 배열을 여기서 바로잡는다
     }
   }catch(e){}
-  return JSON.parse(JSON.stringify(DEFAULT));
+  return normCfg(JSON.parse(JSON.stringify(DEFAULT)));
 }
 function saveCfg(c){ try{ localStorage.setItem("cj_widget",JSON.stringify(c)); }catch(e){} }
 
@@ -112,6 +125,7 @@ let cfg=loadCfg();
 let draft=JSON.parse(JSON.stringify(cfg));  // 설정 페이지 편집용
 const data={ d:null, idx:{}, all:[], names:{}, rate:0, t:0, namesAt:0 };
 const $=s=>document.querySelector(s);
+let cjPickerEx=cfg._sel && EX_NAME[cfg._sel]?cfg._sel:cfg.ex[0];
 
 /* ---------- fetch ---------- */
 async function load(){
@@ -206,6 +220,11 @@ function quote(sym,ex){
   return { price, c24:(d[EX_CHG[ex]]||[])[i]??null, cur:EX_CUR[ex] };
 }
 
+// 가격이 없는 코인은 숨기되 저장값은 보존한다. 일시적인 누락으로 선택을 잃지 않는다.
+function cjCoinsFor(c,ex){
+  return (c.coinsByEx[ex]||[]).filter(sym=>!data.d||quote(sym,ex));
+}
+
 /* ---------- kimchi premium ---------- */
 // 사이트가 계산한 값을 그대로 쓴다. 어느 거래소 탭에서든 같은 값이다(사이트와 일치 보장).
 // null 은 미산출, 0 은 실제 0%다. 서버도 미산출을 null로 보낸다.
@@ -248,13 +267,13 @@ try{ steps=JSON.parse(localStorage.getItem("cj_widget_steps"))||{}; }catch(e){}
  * "2분 전" 표본이 사실 지금과 같은 값이라 변동률이 0.00% 로 나온다.
  * 세대가 바뀌었을 때만 새 표본을 남기면 그런 가짜 0 이 사라진다.
  */
-function pushHist(sym,ex,price){
+function pushHist(sym,ex,price,c24=null){
   const k=sym+"@"+ex;
   const ts=data.t?data.t*1000:Date.now();
   const a=hist[k]||(hist[k]=[]);
   const last=a[a.length-1];
-  if(last&&last[0]===ts){ last[1]=price; return; }   // 같은 세대면 값만 갱신
-  a.push([ts,price]);
+  if(last&&last[0]===ts){ last[1]=price; last[2]=c24; return; }   // 같은 세대면 값만 갱신
+  a.push([ts,price,c24]);
   // 오래된 표본 정리
   const now=Date.now();
   while(a.length && now-a[0][0]>HIST_KEEP) a.shift();
@@ -262,26 +281,33 @@ function pushHist(sym,ex,price){
 function saveHist(){
   try{ localStorage.setItem("cj_widget_hist",JSON.stringify(hist)); }catch(e){}
 }
-// 창 기준 변동률. 기준 시점 표본이 없으면 null.
-function pctOver(sym,ex,win){
-  const q=quote(sym,ex); if(!q) return null;
-  if(win==="24h") return q.c24;
-  // 데이터 파일은 24h 만 담는다. 그보다 짧은 창은 폴링하며 쌓은 히스토리로 계산한다.
-  // (거래소 API 가 1h 를 주지 않아서, 서버에 넣으려면 스냅 계산이 필요하다)
-  // 없는 코인만 아래 롤링 버퍼로 폴백한다.
-  const a=hist[sym+"@"+ex]; if(!a||a.length<2) return null;
+// 알림 계산과 이전 거래소 변동률 표시에 같은 표본을 사용한다.
+function cjAlertBaseline(sym,ex,win){
+  const a=hist[sym+"@"+ex]; if(!Array.isArray(a)||a.length<2) return null;
   // 기준 시점은 벽시계가 아니라 **지금 보고 있는 데이터의 생성 시각**에서 뺀다.
   // 표본에 데이터 생성 시각을 찍어놓고 목표만 Date.now() 로 잡으면, 원본이 늦게
   // 도착한 만큼(현재 10분 주기) 목표가 앞당겨져 바로 직전 표본이 잡히고
   // 자기 자신과 비교해 0.00% 가 나온다.
   const nowTs=data.t?data.t*1000:Date.now();
+  // 24h 알림은 거래소 제공 값이다. 비교는 직전 수신 기록이며 24시간 전으로 표시하지 않는다.
+  if(win==="24h"){
+    for(let i=a.length-1;i>=0;i--) if(a[i][0]<nowTs) return a[i];
+    return null;
+  }
   const target=nowTs-WIN_MS[win];
   let best=null,bd=Infinity;
-  for(const [ts,p] of a){ const d=Math.abs(ts-target); if(d<bd){bd=d;best=p;} }
+  for(const sample of a){ const d=Math.abs(sample[0]-target); if(d<bd){bd=d;best=sample;} }
   // 기준 시점에서 너무 벗어난 표본이면 신뢰하지 않는다
   // 짧은 창은 비율 오차가 너무 빡빡하다 — 데이터 주기가 2분이라 최소 60초는 허용한다
-  if(best==null||!best||bd>Math.max(6e4,WIN_MS[win]*0.35)) return null;
-  return (q.price-best)/best*100;
+  if(best==null||!best[1]||bd>Math.max(6e4,WIN_MS[win]*0.35)) return null;
+  return best;
+}
+// 창 기준 가격 변동률. 알림 발동 계산은 기존 기준을 유지한다.
+function pctOver(sym,ex,win){
+  const q=quote(sym,ex); if(!q) return null;
+  if(win==="24h") return q.c24;
+  const base=cjAlertBaseline(sym,ex,win); if(!base) return null;
+  return (q.price-base[1])/base[1]*100;
 }
 // 단위 내림 + 데드밴드(경계에서 표시가 깜빡이는 것 방지)
 function stepOf(pct,unit,prev){
@@ -318,29 +344,19 @@ async function floatToast(lines){
     const p=JSON.parse(localStorage.getItem("cj_widget_toastpos")||"null");
     if(p&&isFinite(p.x)&&isFinite(p.y)) pos=[p.x,p.y];
   }catch(e){}
-  try{ await T.core.invoke("show_toast",{lines,cols,pos}); }catch(e){}
+  try{ await T.core.invoke("show_toast",{lines,cols,pos,durationSeconds:cfg.alertSeconds}); }catch(e){}
 }
 
-/** 알림 한 줄 — 시세 표와 같은 항목을 담되, 변동률은 알림 기준 시간창의 값을 쓴다. */
-function alertLine(sym,ex,pct){
+/** 큰 변동률은 거래소의 현재 값, 비교 값은 실제 수신한 이전 기록이다. */
+function alertLine(sym,ex){
   const q=quote(sym,ex), kp=kimp(sym,ex);
-  return { sym, name:nameOf(sym),
-           px:q?fmtPx(q.price,q.cur):"—",
-           chg:chgTxt(pct),   chgCls:cls(pct),
+  const base=cjAlertBaseline(sym,ex,cfg.win||"1h");
+  const minutes=base?Math.max(1,Math.round((data.t*1000-base[0])/60000)):null;
+  return { sym, name:nameOf(sym), exchange:EX_NAME[ex], exchangeShort:EX_SHORT[ex],
+           px:q?fmtPx(q.price,q.cur)+(q.cur==="KRW"?"원":""):"—",
+           chg:chgTxt(q?.c24), chgCls:cls(q?.c24),
+           beforeChg:chgTxt(base?.[2]), beforeLabel:minutes?minutes+"분 전":"이전",
            kimp:kimpTxt(kp),  kimpCls:cls(kp) };
-}
-
-/**
- * 알림 기준 거래소 — 지금 보고 있는 탭과 무관하게 코인마다 고정한다.
- *
- * 예전에는 활성 탭 하나만 감시해서, 탭을 옮기면 감시 대상이 통째로 바뀌었다.
- * 그러면 (1) 보던 탭이 아닌 곳의 급변동을 놓치고, (2) 기록·단계 키가 갈려서
- * 탭을 옮길 때마다 알림이 새로 울리거나 반대로 조용해졌다.
- * 설정에 켜둔 거래소 순서대로 시세가 있는 첫 곳을 쓰면 탭과 무관하게 일정하다.
- */
-function alertEx(sym){
-  for(const e of cfg.ex){ if(quote(sym,e)) return e; }
-  return null;
 }
 
 let alertedGenerations={};
@@ -352,9 +368,10 @@ try{
 async function checkAlerts(){
   if(loadFailed||staleData()){ setTray(""); return; }
   const unit=cfg.alert||0;
-  for(const sym of cfg.coins){
-    const ex=alertEx(sym); if(!ex) continue;
-    const q=quote(sym,ex); if(q) pushHist(sym,ex,q.price);
+  // 등록한 거래소·코인 조합을 감시한다. 보고 있는 탭은 감시에 영향을 주지 않는다.
+  const watched=cfg.ex.flatMap(ex=>cjCoinsFor(cfg,ex).map(sym=>({sym,ex})));
+  for(const {sym,ex} of watched){
+    const q=quote(sym,ex); if(q) pushHist(sym,ex,q.price,q.c24);
   }
   saveHist();
   if(!unit){ setTray(""); return; }
@@ -371,8 +388,7 @@ async function checkAlerts(){
    */
   const fresh=(win==="2m");
   const hits=[]; let rang=false, dirty=false, generationsDirty=false;
-  for(const sym of cfg.coins){
-    const ex=alertEx(sym); if(!ex) continue;
+  for(const {sym,ex} of watched){
     const pct=pctOver(sym,ex,win);
     if(pct==null) continue;
     const key=sym+"@"+ex+"@"+win+"@"+unit;
@@ -386,11 +402,11 @@ async function checkAlerts(){
           alertedGenerations[generationKey]=data.t;
           generationsDirty=true; rang=true;
         }
-        hits.push({sym,s,pct,shown:Math.floor(Math.abs(pct)/unit)*unit});
+        hits.push({sym,ex,s,pct,shown:Math.floor(Math.abs(pct)/unit)*unit});
       }
     }else{
       if(s!==prev && Math.abs(s)>Math.abs(prev||0)) rang=true;
-      if(Math.abs(s)>=1) hits.push({sym,s,pct,shown:Math.abs(s)*unit});
+      if(Math.abs(s)>=1) hits.push({sym,ex,s,pct,shown:Math.abs(s)*unit});
     }
   }
   if(dirty){ try{ localStorage.setItem("cj_widget_steps",JSON.stringify(steps)); }catch(e){} }
@@ -401,9 +417,9 @@ async function checkAlerts(){
   hits.sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct));
   // 여러 개면 두 개까지만 — 길어지면 눈에 띈다
   // 트레이 제목은 폭이 좁아 두 개까지만. 토스트는 걸린 만큼 다 보여준다.
-  const trayTxt=hits.slice(0,2).map(h=>`${h.sym} ${h.s>0?"▲":"▼"}${h.shown}%`).join("  ")
+  const trayTxt=hits.slice(0,2).map(h=>`${h.sym}(${EX_SHORT[h.ex]}) ${h.s>0?"▲":"▼"}${h.shown}%`).join("  ")
           + (hits.length>2?`  +${hits.length-2}`:"");
-  const lines=hits.map(h=>alertLine(h.sym,alertEx(h.sym),h.pct));
+  const lines=hits.map(h=>alertLine(h.sym,h.ex));
   setTray(hits.length?trayTxt:"");
   if(rang&&hits.length){
     let vis=true; try{ vis=await appWin().isVisible(); }catch(e){}
@@ -419,11 +435,12 @@ async function setTray(text){
 
 /* ---------- render widget ---------- */
 function activeEx(){ // 현재 보고있는 거래소(설정된 것 중 첫번째를 기본 선택)
-  if(!cfg._sel || !cfg.ex.includes(cfg._sel)) cfg._sel=cfg.ex[0];
+  const exchanges=cfg.ex.filter(ex=>cjCoinsFor(cfg,ex).length);
+  if(!exchanges.includes(cfg._sel)) cfg._sel=exchanges[0];
   return cfg._sel;
 }
 function renderExBtns(){
-  $("#exbtns").innerHTML=cfg.ex.map(e=>
+  $("#exbtns").innerHTML=cfg.ex.filter(e=>cjCoinsFor(cfg,e).length).map(e=>
     `<button class="exbtn ${e===activeEx()?"on":""}" data-e="${e}">${EX_NAME[e]}</button>`
   ).join("") || '<span style="font-size:10px;color:var(--tx3)">거래소를 설정하세요</span>';
 }
@@ -448,9 +465,10 @@ function render(){
   const lh=$("#lhead"); lh.style.gridTemplateColumns=gc; lh.innerHTML=h.join("");
 
   const ex=activeEx();
-  if(!ex||!cfg.coins.length){ $("#rows").innerHTML='<div class="empty">설정에서 코인을 추가하세요.</div>'; return; }
+  const coins=cjCoinsFor(cfg,ex);
+  if(!ex||!coins.length){ $("#rows").innerHTML='<div class="empty">설정에서 코인을 추가하세요.</div>'; return; }
 
-  const rows=cfg.coins.map(sym=>{
+  const rows=coins.map(sym=>{
     const q=quote(sym,ex);
     const cells=[];
     if(cfg.cols.includes("tkr")||cfg.cols.includes("name")){
@@ -469,9 +487,10 @@ function render(){
 /* ---------- settings ---------- */
 function renderExChips(){
   $("#exChips").innerHTML=Object.keys(EX_NAME).map(e=>{
-    const on=draft.ex.includes(e);
-    return `<label class="chip ${on?"on":""}" data-ex="${e}"><input type="checkbox" ${on?"checked":""}>${EX_NAME[e]}</label>`;
+    const on=cjPickerEx===e;
+    return `<label class="chip ${on?"on":""}" data-ex="${e}"><input type="radio" name="cj-picker-exchange" value="${e}" ${on?"checked":""}>${EX_NAME[e]}</label>`;
   }).join("");
+  $("#cjCoinPickerTitle").textContent=EX_NAME[cjPickerEx]+(cjPickerEx==="B"?"으로":"로")+" 보실 코인을 선택해주세요";
 }
 function renderColChips(){
   $("#colChips").innerHTML=COLS.map(([k,label])=>{
@@ -496,29 +515,19 @@ function renderWinChips(){
   }).join("");
 }
 function renderPicked(){
-  $("#picked").innerHTML=draft.coins.map(s=>
+  $("#picked").innerHTML=cjCoinsFor(draft,cjPickerEx).map(s=>
     `<span class="ptag"><b>${s}</b>${(nameOf(s)!==s)?" "+nameOf(s):""}<span class="x" data-rm="${s}">×</span></span>`
   ).join("") || '<span style="font-size:10px;color:var(--tx3)">선택된 코인이 없습니다</span>';
 }
-/**
- * 상장 거래소 배지. 시세가 있는 거래소만 표시한다.
- * 켜두지 않은 거래소는 흐리게 — 고르기 전에 "내 탭에서 보이긴 하나"를 알 수 있다.
- */
-function exBadges(sym){
-  return ["U","B","BN","BY"].filter(e=>quote(sym,e)).map(e=>
-    `<span class="xb x-${e}${draft.ex.includes(e)?"":" off"}">${EX_SHORT[e]}</span>`
-  ).join("");
-}
 function renderPicker(){
   const q=($("#coinSearch").value||"").trim().toUpperCase();
-  let list=data.all;
+  let list=data.all.filter(c=>quote(c.s,cjPickerEx));
   if(q) list=list.filter(c=>c.s.includes(q)||(c.name||"").toUpperCase().includes(q));
   list=list.slice(0,60);
   $("#plist").innerHTML=list.map(c=>{
-    const sel=draft.coins.includes(c.s);
+    const sel=draft.coinsByEx[cjPickerEx].includes(c.s);
     return `<div class="pitem ${sel?"sel":""}" data-add="${c.s}">
       <span class="pt">${c.s}</span><span class="pn">${c.name}</span>
-      <span class="xbs">${exBadges(c.s)}</span>
       <span class="pc">${sel?"✓ 선택됨":"+ 추가"}</span></div>`;
   }).join("") || '<div class="empty">검색 결과 없음</div>';
   renderPicked();
@@ -563,8 +572,11 @@ $("#cjAutostart").addEventListener("change",async()=>{
 
 function openSettings(){
   draft=JSON.parse(JSON.stringify(cfg));
+  cjPickerEx=activeEx()||cfg.ex[0];
   renderExChips(); renderColChips(); renderAlertChips(); renderWinChips(); renderPicker();
   $("#soundChk").checked=!!draft.sound;
+  $("#cjAlertSeconds").value=draft.alertSeconds;
+  $("#cjAlertSeconds").setCustomValidity("");
   syncWinControls();
   void cjSyncAutostart();
   $("#main").classList.remove("on"); $("#settings").classList.add("on");
@@ -577,11 +589,13 @@ $("#exbtns").addEventListener("click",e=>{ const b=e.target.closest(".exbtn"); i
 $("#toSettings").addEventListener("click",openSettings);
 $("#toMain").addEventListener("click",closeSettings);
 
-$("#exChips").addEventListener("click",e=>{
-  const l=e.target.closest(".chip"); if(!l)return; e.preventDefault();
-  const ex=l.dataset.ex; const i=draft.ex.indexOf(ex);
-  if(i>=0){ if(draft.ex.length>1) draft.ex.splice(i,1); } else draft.ex.push(ex);
-  renderExChips();
+$("#exChips").addEventListener("change",e=>{
+  const ex=e.target.value; if(!EX_NAME[ex]) return;
+  cjPickerEx=ex;
+  $("#coinSearch").value="";
+  $("#pickMsg").hidden=true;
+  renderExChips(); renderPicker();
+  $("#exChips input:checked").focus();
 });
 $("#colChips").addEventListener("click",e=>{
   const l=e.target.closest(".chip"); if(!l)return; e.preventDefault();
@@ -605,6 +619,10 @@ $("#winChips").addEventListener("click",e=>{
   draft.win=l.dataset.win; renderWinChips();
 });
 $("#soundChk").addEventListener("change",e=>{ draft.sound=e.target.checked; });
+$("#cjAlertSeconds").addEventListener("input",e=>{
+  e.target.value=e.target.value.replace(/\D/g,"");
+  e.target.setCustomValidity("");
+});
 $("#coinSearch").addEventListener("input",renderPicker);
 // 코인이 하나도 없으면 위젯에 보여줄 게 없으므로 마지막 한 개는 못 지운다.
 const MIN_COINS=1;
@@ -616,21 +634,25 @@ function pickMsg(text){
   pickMsgT=setTimeout(()=>{ el.hidden=true; }, 2200);
 }
 function unpick(sym){
-  const i=draft.coins.indexOf(sym); if(i<0) return false;
-  if(draft.coins.length<=MIN_COINS){ pickMsg("코인 1개는 필수입니다"); return false; }
-  draft.coins.splice(i,1); return true;
+  const coins=draft.coinsByEx[cjPickerEx];
+  const i=coins.indexOf(sym); if(i<0) return false;
+  if(EX_KEYS.flatMap(ex=>cjCoinsFor(draft,ex)).length<=MIN_COINS){ pickMsg("전체 거래소에서 코인 1개는 필수입니다"); return false; }
+  coins.splice(i,1); return true;
 }
 
 $("#plist").addEventListener("click",e=>{
   const it=e.target.closest(".pitem"); if(!it)return;
   const s=it.dataset.add;
-  if(draft.coins.includes(s)){ if(!unpick(s)) return; }
-  else draft.coins.push(s);
+  if(!quote(s,cjPickerEx)) return;
+  const coins=draft.coinsByEx[cjPickerEx];
+  if(coins.includes(s)){ if(!unpick(s)) return; }
+  else coins.push(s);
   renderPicker();
 });
 // 고른 코인을 전부 지우고 비트코인 하나만 남긴다. 저장을 눌러야 실제로 적용된다.
 $("#resetCoins").addEventListener("click",()=>{
-  draft.coins=["BTC"];
+  if(!quote("BTC",cjPickerEx)){ pickMsg("비트코인 시세를 받은 뒤 초기화할 수 있습니다"); return; }
+  draft.coinsByEx[cjPickerEx]=["BTC"];
   renderPicker();
 });
 $("#picked").addEventListener("click",e=>{
@@ -638,25 +660,32 @@ $("#picked").addEventListener("click",e=>{
   if(unpick(x.dataset.rm)) renderPicker();
 });
 $("#save").addEventListener("click",()=>{
+  const duration=$("#cjAlertSeconds"), seconds=cjAlertSeconds(duration.value);
+  if(seconds===null){
+    duration.setCustomValidity("1~86400 사이의 초를 숫자로 입력해주세요.");
+    duration.reportValidity(); duration.focus(); return;
+  }
+  draft.alertSeconds=seconds;
   // cols는 COLS 정의 순서로 정렬해 저장
   normCfg(draft);   // 순서 정리 + 빈 값 방지
-  cfg={...draft}; cfg._sel=cfg.ex[0]; cfg.alert=draft.alert||0;
+  cfg=JSON.parse(JSON.stringify(draft)); cfg._sel=cjPickerEx; cfg.alert=draft.alert||0;
   cfg.win=draft.win||"1h"; cfg.sound=!!draft.sound;
   cfg.acols=(draft.acols&&draft.acols.length)?draft.acols.slice():["tkr","chg"];
   saveCfg(cfg); render(); checkAlerts(); closeSettings();
 });
 
 /* ---------- window controls (Tauri) ---------- */
-let ui={ opa:100, layer:"top", snap:true, hotkey:"", pos:null, theme:"dark" };
+let ui={ opa:100, layer:"bottom", snap:true, hotkey:"", pos:null, theme:"dark" };
 try{
   const u=JSON.parse(localStorage.getItem("cj_widget_ui"));
   if(u){
     ui={...ui,...u};
     // 구버전 마이그레이션: opa는 0~3 인덱스, pin은 불리언이었다
     if(typeof u.opa==="number"&&u.opa<=3) ui.opa=[100,90,75,60][u.opa]||100;
-    if(typeof u.pin==="boolean") ui.layer=u.pin?"top":"normal";
+    if(typeof u.pin==="boolean" && !["top","bottom"].includes(u.layer)) ui.layer=u.pin?"top":"bottom";
   }
 }catch(e){}
+if(ui.layer!=="top") ui.layer="bottom";
 function saveUi(){ try{ localStorage.setItem("cj_widget_ui",JSON.stringify(ui)); }catch(e){} }
 function appWin(){ return T&&T.window? T.window.getCurrentWindow() : null; }
 const TW=T&&T.window;
@@ -685,7 +714,8 @@ $("#themeBtn").addEventListener("click",()=>{
 /* --- 레이어 순위 --- */
 async function applyLayer(){
   $("#pinBtn").classList.toggle("on",ui.layer==="top");
-  $("#pinBtn").dataset.tip = ui.layer==="top"?"항상 위 (켜짐)":"항상 위에 고정";
+  $("#pinBtn").dataset.tip = ui.layer==="top"?"항상 위 (켜짐) · 누르면 항상 뒤":"항상 뒤 (고정 꺼짐) · 누르면 항상 위";
+  $("#pinBtn").setAttribute("aria-pressed",String(ui.layer==="top"));
   const w=appWin(); if(!w) return;
   try{
     // 둘 다 창 레벨을 건드리므로 순서가 중요하다.
@@ -696,7 +726,7 @@ async function applyLayer(){
       if(typeof w.setAlwaysOnBottom==="function") await w.setAlwaysOnBottom(true);
     }else{
       if(typeof w.setAlwaysOnBottom==="function") await w.setAlwaysOnBottom(false);
-      await w.setAlwaysOnTop(ui.layer==="top");
+      await w.setAlwaysOnTop(true);
     }
   }catch(e){}
 }
@@ -966,7 +996,7 @@ $("#snapChk").addEventListener("change",e=>{ ui.snap=e.target.checked; saveUi();
 
 /* --- 타이틀바 --- */
 $("#pinBtn").addEventListener("click",()=>{
-  ui.layer=(ui.layer==="top")?"normal":"top"; saveUi(); applyLayer(); syncWinControls();
+  ui.layer=(ui.layer==="top")?"bottom":"top"; saveUi(); applyLayer(); syncWinControls();
 });
 $("#closeBtn").addEventListener("click",async()=>{
   const w=appWin();

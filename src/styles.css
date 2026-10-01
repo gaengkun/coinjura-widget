@@ -113,6 +113,10 @@
   .chip input{appearance:none;width:12px;height:12px;border:1.5px solid var(--tx3);border-radius:3px;position:relative;flex:none}
   .chip.on input{background:var(--accent);border-color:var(--accent)}
   .chip.on input::after{content:"✓";position:absolute;top:-2px;left:1px;font-size:10px;color:#1a1400;font-weight:700}
+  #exChips input{border-radius:50%}
+  #exChips .chip.on input::after{content:"";inset:3px;border-radius:50%;background:#1a1400}
+  #exChips input:focus-visible{outline:2px solid var(--tx);outline-offset:3px}
+  #cjCoinPickerTitle{line-height:1.5;word-break:keep-all}
 
   /* coin picker */
   .search{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:7px;
@@ -229,16 +233,6 @@
     animation:pmsgIn .16s ease-out}
   @keyframes pmsgIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion:reduce){ .pmsg{animation:none} }
-
-  /* 코인 목록의 상장 거래소 배지. 색은 거래소 탭과 같은 브랜드색을 쓴다 */
-  .xbs{display:flex;gap:3px;flex:none;margin-right:6px}
-  .xb{font-size:8.5px;font-weight:700;line-height:1;letter-spacing:-.02em;
-    padding:2px 4px;border-radius:3px;color:#1a1400;white-space:nowrap}
-  .xb.x-U{background:var(--U);color:#fff}
-  .xb.x-B{background:var(--B)}
-  .xb.x-BN{background:var(--BN)}
-  .xb.x-BY{background:var(--BY);color:#fff}
-  .xb.off{opacity:.28}          /* 설정에서 꺼둔 거래소 */
 
   /* 새 버전이 있을 때만 나오는 버튼. 눈에 띄어야 하므로 채움색을 쓴다 */
   .updbtn{flex:none;background:var(--accent);border:1px solid var(--accent);

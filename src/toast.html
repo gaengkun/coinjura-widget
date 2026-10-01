@@ -1,13 +1,13 @@
 <title>알림</title>
 <style>
   :root{
-    --card:#141822; --tx:#e6ebf3; --accent:#f7a600; --accent-tx:#f7a600;
+    --card:#141822; --tx:#e6ebf3; --tx2:#828c9f; --accent:#f7a600; --accent-tx:#f7a600;
     --up:#e5484d; --down:#3d7bf6;
     --mono:"SF Mono",ui-monospace,Menlo,Consolas,"Cascadia Mono","Roboto Mono",monospace;
     --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Segoe UI","Malgun Gothic",sans-serif;
   }
   [data-theme="light"]{
-    --card:#f5f6f8; --tx:#12151b; --accent-tx:#a06a00;
+    --card:#f5f6f8; --tx:#12151b; --tx2:#5c6573; --accent-tx:#a06a00;
     --up:#d92d39; --down:#1f66e0;
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -18,16 +18,25 @@
      몰기 때문에 여기서는 초기 상태(안 보임)만 잡아둔다. */
   .bar{height:100%;display:flex;flex-direction:column;justify-content:center;gap:2px;
     background:var(--card);border:1px solid var(--accent-tx);border-radius:10px;
-    padding:8px 12px;box-shadow:0 8px 22px -8px rgba(0,0,0,.6);
+    padding:6px 10px;box-shadow:0 8px 22px -8px rgba(0,0,0,.6);
     opacity:0}
 
-  /* 행 구성은 위젯 표와 같다 — 설정한 항목만 열로 들어간다 */
-  .ln{display:grid;align-items:center;gap:4px;height:18px;color:var(--tx)}
-  .nmw{display:flex;align-items:baseline;gap:4px;min-width:0}
-  .tkr{font-weight:700;font-size:12px;letter-spacing:-.01em}
+  /* 현재 값은 한 줄에, 이전 기록은 작은 보조 줄에. Rust 창 높이도 행당 36px이다. */
+  .ln{display:flex;flex-direction:column;justify-content:center;height:34px;flex:none;color:var(--tx)}
+  .ln+.ln{border-top:1px solid var(--tx2)}
+  .cj-toast-head{display:flex;align-items:center;gap:6px;min-height:18px}
+  .cj-toast-baseline{font-size:9px;line-height:14px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cj-toast-ex{font-size:9px;font-weight:700;line-height:1;padding:3px 5px;
+    border-radius:4px;white-space:nowrap;flex:none;color:var(--tx);background:var(--card)}
+  .cj-toast-ex[data-exchange="업비트"]{background:#3d5afe;color:#fff}
+  .cj-toast-ex[data-exchange="빗썸"]{background:#f7a600;color:#1a1400}
+  .cj-toast-ex[data-exchange="바이낸스"]{background:#f0b90b;color:#1a1400}
+  .cj-toast-ex[data-exchange="바이비트"]{background:#ff7a45;color:#1a0d00}
+  .nmw{display:flex;align-items:center;gap:4px;min-width:0;flex:1}
+  .tkr{font-weight:700;font-size:12px;letter-spacing:-.01em;flex:none}
   .nm{font-size:10px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .px{text-align:right;font-family:var(--mono);font-size:11.5px;font-weight:600}
-  .cg{text-align:right;font-family:var(--mono);font-size:11px;font-weight:600}
+  .px{font-family:var(--mono);font-size:10.5px;font-weight:600;white-space:nowrap;flex:none}
+  .cg{text-align:right;font-family:var(--mono);font-size:12px;font-weight:700;white-space:nowrap;flex:none}
   .kp{text-align:right;font-family:var(--mono);font-size:10.5px;color:var(--tx2)}
   .up{color:var(--up)} .down{color:var(--down)}
 </style>
@@ -37,7 +46,8 @@
 <script>
   const T=window.__TAURI__;
   const bar=()=>document.getElementById("bar");
-  const IN_MS=280, HOLD_MS=3000, OUT_MS=2000;
+  const IN_MS=280, OUT_MS=200;
+  let durationMs=3000;
   let fadeT=null;
 
   // 위젯 창과 같은 출처라 테마·투명도 설정을 그대로 읽는다.
@@ -96,38 +106,43 @@
   });
 
   /* ① Rust 가 창을 띄우기 전에 부른다 — 내용만 채우고 안 보이는 상태로 대기 */
-  function gridOf(cols){
-    const parts=[];
-    if(cols.includes("tkr")||cols.includes("name")) parts.push("1fr");
-    if(cols.includes("price")) parts.push("84px");
-    if(cols.includes("chg"))   parts.push("58px");
-    if(cols.includes("kimp"))  parts.push("44px");
-    return parts.join(" ");
-  }
   function cell(tag,cls,text){
     const el=document.createElement(tag); el.className=cls;
     el.textContent=text==null?"":String(text); return el;
   }
-  window.__cjToast=function(lines,cols){
+  window.__cjToast=function(lines,cols,durationSeconds=3){
+    durationMs=(Number.isInteger(durationSeconds) && durationSeconds>=1 && durationSeconds<=86400 ? durationSeconds : 3)*1000;
     const u=readUi();
     applyTheme(u);
     const list=Array.isArray(lines)?lines:[lines];
     const cs=(Array.isArray(cols)&&cols.length)?cols:["tkr","chg"];
-    const tmpl=gridOf(cs);
     const b=bar();
     b.innerHTML="";
     for(const it of list){
       const row=document.createElement("div");
-      row.className="ln"; row.style.gridTemplateColumns=tmpl;
-      if(cs.includes("tkr")||cs.includes("name")){
-        const w=document.createElement("div"); w.className="nmw";
-        if(cs.includes("tkr"))  w.appendChild(cell("span","tkr",it.sym));
-        if(cs.includes("name")) w.appendChild(cell("span","nm",it.name));
-        row.appendChild(w);
+      row.className="ln";
+      const exchange=cell("span","cj-toast-ex",it.exchangeShort||it.exchange||"거래소");
+      exchange.dataset.exchange=it.exchange||"";
+      exchange.title=it.exchange||"거래소";
+      const w=document.createElement("div"); w.className="nmw";
+      if(cs.includes("tkr"))  w.appendChild(cell("span","tkr",it.sym));
+      if(cs.includes("name")) w.appendChild(cell("span","nm",it.name));
+      w.appendChild(exchange);
+      const head=cell("div","cj-toast-head",""); head.appendChild(w);
+      if(cs.includes("price")){
+        const price=cell("div","px",it.px||"—");
+        price.title="현재 가격"; head.appendChild(price);
       }
-      if(cs.includes("price")) row.appendChild(cell("div","px",it.px));
-      if(cs.includes("chg"))   row.appendChild(cell("div","cg "+(it.chgCls||""),it.chg));
-      if(cs.includes("kimp"))  row.appendChild(cell("div","kp "+(it.kimpCls||""),it.kimp));
+      if(cs.includes("chg")){
+        const change=cell("div","cg "+(it.chgCls||""),it.chg||"—");
+        change.title="현재 거래소 변동률"; head.appendChild(change);
+      }
+      if(cs.includes("kimp")) head.appendChild(cell("div","kp "+(it.kimpCls||""),"김프 "+(it.kimp||"—")));
+      row.appendChild(head);
+      if(cs.includes("chg")) row.appendChild(cell("div","cj-toast-baseline",
+        it.beforeChg && it.beforeChg!=="—"
+          ?(it.beforeLabel||"이전")+" "+it.beforeChg+" → 현재 "+(it.chg||"—")
+          :"이전 변동률 기록 없음"));
       b.appendChild(row);
     }
     clearTimeout(fadeT);
@@ -144,7 +159,7 @@
     fadeT=setTimeout(()=>{
       b.style.transition="opacity "+OUT_MS+"ms ease-in";
       b.style.opacity="0";                // 안 누르면 서서히 사라진다
-    }, HOLD_MS);
+    }, durationMs-OUT_MS);
   }
   window.__cjPlay=function(x,y){
     base={x:Number(x)||0, y:Number(y)||0};   // 끌 때 기준이 될 현재 위치

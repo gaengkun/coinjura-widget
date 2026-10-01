@@ -19,6 +19,7 @@ fn show_toast(
     lines: Vec<serde_json::Value>,
     cols: Vec<String>,
     pos: Option<(f64, f64)>,
+    duration_seconds: Option<u32>,
 ) {
     let Some(w) = app.get_webview_window("toast") else {
         return;
@@ -30,11 +31,13 @@ fn show_toast(
         return;
     }
     let n = shown.len() as f64;
+    let seconds = duration_seconds.filter(|value| (1..=86400).contains(value)).unwrap_or(3);
 
     let js = format!(
-        "window.__cjToast && window.__cjToast({}, {})",
+        "window.__cjToast && window.__cjToast({}, {}, {})",
         serde_json::to_string(&shown).unwrap_or_else(|_| "[]".into()),
-        serde_json::to_string(&cols).unwrap_or_else(|_| "[]".into())
+        serde_json::to_string(&cols).unwrap_or_else(|_| "[]".into()),
+        seconds
     );
     let _ = w.eval(&js);
 
@@ -62,7 +65,7 @@ fn show_toast(
         placed = true;
     }
 
-    let h_logical = 14.0 + n * 20.0;
+    let h_logical = 14.0 + n * 36.0;
     let _ = w.set_size(tauri::LogicalSize::new(w_logical, h_logical));
 
     // 위젯이 놓인 모니터 밖으로 나가지 않게 붙잡아 둔다.
@@ -94,7 +97,7 @@ fn show_toast(
     let gen = TOAST_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let app2 = app.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(5600));
+        std::thread::sleep(std::time::Duration::from_secs(seconds as u64));
         if TOAST_GEN.load(Ordering::SeqCst) != gen {
             return; // 그 사이 새 토스트가 떴다
         }
