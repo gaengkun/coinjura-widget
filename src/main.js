@@ -601,7 +601,7 @@ $("#save").addEventListener("click",()=>{
 });
 
 /* ---------- window controls (Tauri) ---------- */
-let ui={ opa:100, layer:"normal", snap:true, hotkey:"", pos:null, size:null, theme:"dark" };
+let ui={ opa:100, toastOpa:true, layer:"normal", snap:true, hotkey:"", pos:null, size:null, theme:"dark" };
 try{
   const u=JSON.parse(localStorage.getItem("cj_widget_ui"));
   if(u){
@@ -612,6 +612,7 @@ try{
   }
 }catch(e){}
 if(!["normal","top","bottom"].includes(ui.layer)) ui.layer="normal";
+ui.toastOpa=ui.toastOpa!==false;
 function saveUi(){ try{ localStorage.setItem("cj_widget_ui",JSON.stringify(ui)); }catch(e){} }
 function appWin(){ return T&&T.window? T.window.getCurrentWindow() : null; }
 const TW=T&&T.window;
@@ -921,6 +922,7 @@ $("#hkClear").addEventListener("click",async()=>{
 /* --- 창 설정 컨트롤 (설정 페이지 진입 시 현재 값 반영) --- */
 function syncWinControls(){
   $("#opaRange").value=ui.opa; $("#opaNum").value=ui.opa;
+  $("#cjToastOpacity").checked=ui.toastOpa;
   $("#snapChk").checked=!!ui.snap;
   $("#hkInput").value=ui.hotkey||"";
   document.querySelectorAll("#layerSeg button").forEach(b=>
@@ -944,6 +946,7 @@ $("#layerSeg").addEventListener("click",e=>{
   const b=e.target.closest("button"); if(!b) return;
   ui.layer=b.dataset.layer; saveUi(); applyLayer(); syncWinControls();
 });
+$("#cjToastOpacity").addEventListener("change",e=>{ ui.toastOpa=e.target.checked; saveUi(); });
 $("#snapChk").addEventListener("change",e=>{ ui.snap=e.target.checked; saveUi(); });
 
 /* --- 타이틀바 --- */

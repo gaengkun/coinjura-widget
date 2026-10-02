@@ -214,13 +214,13 @@ const toast=readFileSync(new URL("../src/toast.html",import.meta.url),"utf8");
 assert(/<meta charset="UTF-8">/i.test(toast));
 const toastBar={style:{},children:[],appendChild(el){this.children.push(el);}};
 let fadeScheduled=0;
-let fadeDelay=0, fadeCallback;
+let fadeDelay=0, fadeCallback, toastUi=null;
 const toastWindow={addEventListener(){}};
 vm.runInNewContext(toast.match(/<script>([\s\S]*?)<\/script>/)[1],{
-  window:toastWindow,localStorage:{getItem(){return null;}},
+  window:toastWindow,localStorage:{getItem(key){return key==="cj_widget_ui"?JSON.stringify(toastUi):null;}},
   setTimeout(callback,delay){fadeScheduled++;fadeCallback=callback;fadeDelay=delay;return 1;},clearTimeout(){},
-  document:{documentElement:{dataset:{}},getElementById(){return toastBar;},addEventListener(){},
-    createElement(){return {style:{},dataset:{},children:[],appendChild(el){this.children.push(el);}};}}
+  document:{documentElement:{dataset:{}},getElementById(id){return id==="bar"?toastBar:null;},addEventListener(){},
+    createElement(){return {style:{},dataset:{},children:[],setAttribute(key,value){this[key]=value;},appendChild(el){this.children.push(el);}};}}
 });
 for(const [key,exchange,exchangeShort] of [["U","업비트","업"],["B","빗썸","빗"],["BN","바이낸스","바낸"],["BY","바이비트","바빗"]]){
   assert.equal(run(`alertLine("BTC","${key}",1).exchangeShort`),exchangeShort);
@@ -235,35 +235,160 @@ for(const [key,exchange,exchangeShort] of [["U","업비트","업"],["B","빗썸"
   assert.equal(badge.title,exchange);
   assert.equal(row.children[0].children[1].textContent,"113,670,000원");
   assert.equal(row.children.length,1);
-  assert.equal(row.children[0].children[2].textContent,"+24%");
-  assert.equal(row.children[0].children[2].title,"2분 전 거래소 변동률 · 현재 +29.00%");
-  assert.equal(row.children[0].children[3].children[0].textContent,"| ");
-  assert.equal(row.children[0].children[3].children[0].className,"cj-toast-old");
-  assert.equal(row.children[0].children[3].children[1].textContent,"↑+5%");
+  const rates=row.children[0].children[2];
+  assert.equal(rates.children[0].textContent,"|");
+  assert.equal(rates.children[0].className,"cj-toast-sep");
+  assert.equal(rates.children[0]['aria-hidden'],"true");
+  assert.equal(rates.children[1].textContent,"+24%");
+  assert.equal(rates.children[1].title,"2분 전 거래소 변동률 · 현재 +29.00%");
+  assert.equal(rates.children[2].textContent,"↑+5%");
 }
 toastWindow.__cjToast([{exchange:"업비트",chg:"+1.00%"}],["chg"]);
 assert.equal(toastBar.children.at(-1).children[0].children[0].children[0].textContent,"업비트");
-assert.equal(toastBar.children.at(-1).children[0].children.at(-1).children[1].textContent,"—");
+assert.equal(toastBar.children.at(-1).children[0].children.at(-1).children[2].textContent,"—");
 for(const [delta,text,color] of [[0,"0%","flat"],[-7,"↓-7%","down"],[12,"↑+12%","up"]]){
   toastWindow.__cjToast([{sym:"STX",beforeRate:-3,changeDelta:delta}],["tkr","chg"]);
   const head=toastBar.children.at(-1).children[0];
-  assert.equal(head.children[1].textContent,"-3%");
-  assert.equal(head.children[2].children[1].textContent,text);
-  assert.equal(head.children[2].className,"cg "+color);
+  assert.equal(head.children[1].children[1].textContent,"-3%");
+  assert.equal(head.children[1].children[2].textContent,text);
+  assert.equal(head.children[1].children[2].className,"cg "+color);
 }
-toastWindow.__cjPlay(0,0);
+for(const [premium,text,color] of [["-0.50%","김프 -0.5%","down"],["+0.50%","김프 +0.5%","up"],["0.00%","김프 0%","flat"],["-0.00%","김프 0%","flat"]]){
+  toastWindow.__cjToast([{sym:"BTC",name:"비트코인",exchangeShort:"업",px:"116,562,000원",beforeRate:0.82,changeDelta:-0.04,kimp:premium}],['kimp','chg','price','name','tkr']);
+  const head=toastBar.children.at(-1).children[0];
+  assert.deepEqual(head.children[0].children.map(el=>el.textContent),["BTC","비트코인","업"]);
+  assert.equal(head.children[1].textContent,"116,562,000원");
+  assert.equal(head.children[2].children[1].textContent,"+0.82%");
+  assert.equal(head.children[2].children[2].textContent,"↓-0.04%");
+  assert.equal(head.children[3].children[0].className,"cj-toast-sep");
+  assert.equal(head.children[3].children[1].textContent,text);
+  assert.equal(head.children[3].children[1].className,"kp "+color);
+}
+for(const premium of [null,"—","없음","invalid%"]){
+  toastWindow.__cjToast([{sym:"BTC",kimp:premium}],["tkr","kimp"]);
+  assert.equal(toastBar.children.at(-1).children[0].children.length,1);
+}
+console.log("PASS: requested alert column order, grouped separators, signed/zero premium and missing premium omission");
+await toastWindow.__cjPlay(0,0);
 assert.equal(fadeScheduled,1); // Packaged alerts retain their normal auto-hide behavior.
 assert.equal(fadeDelay,2800);
 toastWindow.__cjToast([{sym:"BTC"}],["tkr"],12);
-toastWindow.__cjPlay(0,0);
+await toastWindow.__cjPlay(0,0);
 assert.equal(fadeDelay,11800);
 fadeCallback();
 assert.equal(toastBar.style.transition,"opacity 200ms ease-in");
 assert.equal(toastBar.style.opacity,"0");
 toastWindow.__cjToast([{sym:"BTC"}],["tkr"],0);
-toastWindow.__cjPlay(0,0);
+await toastWindow.__cjPlay(0,0);
 assert.equal(fadeDelay,2800);
 console.log("PASS: four exchange badges, badge with numeric-only columns, normal auto-hide");
+for(const [saved,opacity] of [[{},"1"],[{opa:35},"0.35"],[{opa:35,toastOpa:true},"0.35"],[{opa:35,toastOpa:false},"1"],[{opa:5,toastOpa:true},"0.05"]]){
+  toastUi=saved;
+  await toastWindow.__cjPlay(0,0);
+  assert.equal(toastBar.style.opacity,opacity);
+}
+
+// Exercise measured sizing, DPI/work-area bounds and closing while fitting.
+const fitBar={style:{},get offsetWidth(){return 624;},
+  get offsetHeight(){return parseFloat(this.style.width)<624?188:139;}
+};
+let fitMonitor={scaleFactor:2,workArea:{position:{x:1920,y:0},size:{width:2560,height:1440}}};
+let fitSize,fitPosition,fitFades=0,fitMouseDown,fitMouseUp,finishFit;
+const fitStorage=new Map(), fitCalls=[];
+const fitGrip={style:{},handlers:{},addEventListener(name,fn){this.handlers[name]=fn;},setPointerCapture(){}};
+const fitWindow={addEventListener(name,fn){if(name==="mouseup")fitMouseUp=fn;},__TAURI__:{window:{
+  currentMonitor:async()=>fitMonitor,
+  getCurrentWindow:()=>({setSize:async size=>{fitSize=size;Object.assign(fitWindow,{innerWidth:size.width,innerHeight:size.height});if(finishFit)await new Promise(resolve=>{finishFit=resolve;});},setPosition:async pos=>{fitPosition=pos;}}),
+  LogicalSize:class{constructor(width,height){Object.assign(this,{width,height});}},
+  LogicalPosition:class{constructor(x,y){Object.assign(this,{x,y});}}
+},core:{invoke:async(command,args)=>{fitCalls.push({command,args});}}}};
+const fitEnvironment={
+  window:fitWindow,localStorage:{getItem(key){return fitStorage.get(key)||null;},setItem(key,value){fitStorage.set(key,value);}},
+  setTimeout(){fitFades++;},clearTimeout(){},
+  document:{documentElement:{dataset:{}},getElementById(id){return id==="bar"?fitBar:fitGrip;},addEventListener(name,fn){if(name==="mousedown")fitMouseDown=fn;}}
+};
+vm.runInNewContext(toast.match(/<script>([\s\S]*?)<\/script>/)[1],fitEnvironment);
+await fitWindow.__cjPlay(2200,1000);
+assert.deepEqual({...fitSize},{width:624,height:139});
+assert.deepEqual({...fitPosition},{x:1608,y:573});
+assert.equal(fitBar.style.width,"");
+assert.equal(fitBar.style.height,"");
+fitMonitor={scaleFactor:2,position:{x:0,y:0},size:{width:800,height:600}};
+await fitWindow.__cjPlay(-50,-50);
+assert.deepEqual({...fitSize},{width:384,height:188});
+assert.deepEqual({...fitPosition},{x:8,y:8});
+const fitBeforeClose=fitFades;
+finishFit=true;
+const fitting=fitWindow.__cjPlay(0,0);
+while(typeof finishFit!=="function")await Promise.resolve();
+fitMouseDown({button:0,screenX:0,screenY:0,preventDefault(){}});
+fitMouseUp();
+finishFit();
+await fitting;
+assert.equal(fitFades,fitBeforeClose);
+assert.equal(fitBar.style.opacity,"0");
+const toastPermissions=JSON.parse(readFileSync(new URL("../src-tauri/capabilities/toast.json",import.meta.url),"utf8")).permissions;
+assert(toastPermissions.includes("core:window:allow-set-size"));
+assert(toastPermissions.includes("core:window:allow-current-monitor"));
+console.log("PASS: toast content sizing, screen bounds, DPI, wrapping height and close during resize");
+
+finishFit=null;
+fitMonitor={scaleFactor:1,position:{x:0,y:0},size:{width:1280,height:720}};
+fitStorage.set("cj_widget_ui",JSON.stringify({size:{width:320,height:480}}));
+await fitWindow.__cjPlay(0,0);
+const pointer=(x,y)=>({button:0,pointerId:1,screenX:x,screenY:y,preventDefault(){},stopPropagation(){}});
+fitGrip.handlers.pointerdown(pointer(100,100));
+assert.equal(fitCalls.at(-1).command,"hold_toast");
+assert.equal(fitCalls.at(-1).args.active,true);
+fitGrip.handlers.pointermove(pointer(196,140));
+await fitGrip.handlers.pointerup();
+assert.deepEqual(JSON.parse(fitStorage.get("cj_widget_toastsize")),{width:720,height:179});
+assert.deepEqual(JSON.parse(fitStorage.get("cj_widget_ui")),{size:{width:320,height:480}});
+assert.equal(fitCalls.at(-1).args.active,false);
+await fitWindow.__cjPlay(0,0);
+assert.deepEqual({...fitSize},{width:720,height:179});
+vm.runInNewContext(toast.match(/<script>([\s\S]*?)<\/script>/)[1],{...fitEnvironment});
+await fitWindow.__cjPlay(0,0);
+assert.deepEqual({...fitSize},{width:720,height:179}); // Fresh script restores its separate size.
+await fitGrip.handlers.keydown({key:"ArrowRight",preventDefault(){},stopPropagation(){}});
+assert.deepEqual(JSON.parse(fitStorage.get("cj_widget_toastsize")),{width:736,height:179});
+fitStorage.set("cj_widget_toastsize",'{"width":0,"height":"invalid"}');
+await fitWindow.__cjPlay(0,0);
+assert.deepEqual({...fitSize},{width:624,height:139});
+const toastConfig=JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json",import.meta.url),"utf8")).app.windows.find(w=>w.label==="toast");
+assert.equal(toastConfig.resizable,true);
+assert.equal(toastConfig.minWidth,240);
+assert.equal(toastConfig.minHeight,54);
+console.log("PASS: separate toast size, pointer/keyboard resize, restart, invalid-size fallback and main-size isolation");
+
+// Run the actual checkbox loading/saving path, including legacy defaults and restart.
+const opacityCode=source.slice(source.indexOf('let ui='),source.indexOf('/* --- 투명도:'))
+  +source.slice(source.indexOf('function syncWinControls()'),source.indexOf('// 슬라이더는'))
+  +source.slice(source.indexOf('$("#cjToastOpacity").addEventListener'),source.indexOf('$("#snapChk").addEventListener'));
+const opacityFields=new Map();
+const opacityField=selector=>{
+  if(!opacityFields.has(selector)) opacityFields.set(selector,{addEventListener(name,handler){this[name]=handler;}});
+  return opacityFields.get(selector);
+};
+let opacitySaved={opa:35,size:{width:320,height:480},layer:"normal"};
+const opacityEnvironment={$:opacityField,T:null,document:{querySelectorAll(){return [];}},
+  localStorage:{getItem(){return JSON.stringify(opacitySaved);},setItem(_,value){opacitySaved=JSON.parse(value);}}
+};
+const opacityContext=vm.createContext(opacityEnvironment);
+vm.runInContext(opacityCode+'\nsyncWinControls();',opacityContext);
+assert.equal(opacityField("#cjToastOpacity").checked,true);
+opacityField("#cjToastOpacity").change({target:{checked:false}});
+assert.equal(opacitySaved.toastOpa,false);
+assert.equal(opacitySaved.opa,35);
+assert.deepEqual(opacitySaved.size,{width:320,height:480});
+vm.runInNewContext(opacityCode+'\nsyncWinControls();',{...opacityEnvironment});
+assert.equal(opacityField("#cjToastOpacity").checked,false);
+opacityField("#cjToastOpacity").change({target:{checked:true}});
+assert.equal(opacitySaved.toastOpa,true);
+assert(settingsHtml.indexOf('id="opaRange"')<settingsHtml.indexOf('id="cjToastOpacity"'));
+assert(settingsHtml.indexOf('id="cjToastOpacity"')<settingsHtml.indexOf('id="layerSeg"'));
+console.log("PASS: alert opacity checkbox, legacy default, persistence/restart and unchanged main opacity/size");
+
 
 // Run the actual layer loading, native application and button handlers in isolation.
 const layerCode=source.slice(source.indexOf('let ui='),source.indexOf('/* --- 투명도:'))

@@ -42,19 +42,20 @@ fn show_toast(
     let _ = w.eval(&js);
 
     // 위젯이 있던 그 자리에 그대로 띄운다. 사용자의 눈이 이미 그 위치를 알고 있어서
-    // 화면 구석에 띄우는 것보다 알아채기 쉽다. 폭도 위젯에 맞춰 자리가 겹치게 한다.
+    // 화면 구석에 띄우는 것보다 알아채기 쉽다. 알림 크기는 시세창과 독립적이다.
     let main = app.get_webview_window("main");
-    let mut w_logical = 300.0_f64;
+    let w_logical = w.inner_size()
+        .map(|size| size.width as f64 / w.scale_factor().unwrap_or(1.0))
+        .unwrap_or(300.0).max(240.0);
     let mut x = 0.0_f64;
     let mut y = 0.0_f64;
     let mut placed = false;
 
     if let Some(m) = &main {
-        if let (Ok(p), Ok(sz)) = (m.outer_position(), m.outer_size()) {
+        if let Ok(p) = m.outer_position() {
             let sf = m.scale_factor().unwrap_or(1.0);
             x = p.x as f64 / sf;
             y = p.y as f64 / sf;
-            w_logical = (sz.width as f64 / sf).clamp(240.0, 460.0);
             placed = true;
         }
     }
@@ -94,14 +95,35 @@ fn show_toast(
     // 그래서 내용 채우기와 연출 시작을 나눠, 띄운 뒤에 연출을 건다.
     let _ = w.eval(&format!("window.__cjPlay && window.__cjPlay({}, {})", x, y));
 
+    schedule_toast_hide(app, seconds);
+}
+
+/// 이동·크기 조절 중에는 숨김을 멈추고, 조작을 마치면 노출 시간을 다시 센다.
+#[tauri::command]
+fn hold_toast(app: tauri::AppHandle, active: bool, duration_seconds: Option<u32>) {
+    if active {
+        TOAST_GEN.fetch_add(1, Ordering::SeqCst);
+    } else {
+        let seconds = duration_seconds.filter(|value| (1..=86400).contains(value)).unwrap_or(3);
+        schedule_toast_hide(app, seconds);
+    }
+}
+
+fn schedule_toast_hide(app: tauri::AppHandle, seconds: u32) {
     let gen = TOAST_GEN.fetch_add(1, Ordering::SeqCst) + 1;
-    let app2 = app.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(seconds as u64));
-        if TOAST_GEN.load(Ordering::SeqCst) != gen {
-            return; // 그 사이 새 토스트가 떴다
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(seconds as u64);
+        loop {
+            if TOAST_GEN.load(Ordering::SeqCst) != gen {
+                return; // 새 알림·조작으로 취소된 타이머는 오래 남겨 두지 않는다.
+            }
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            std::thread::sleep(remaining.min(std::time::Duration::from_millis(250)));
         }
-        if let Some(w) = app2.get_webview_window("toast") {
+        if let Some(w) = app.get_webview_window("toast") {
             let _ = w.hide();
         }
     });
@@ -244,7 +266,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![set_tray_text, set_hotkey, show_toast, hide_toast, store::cj_is_store, store::cj_autostart])
+        .invoke_handler(tauri::generate_handler![set_tray_text, set_hotkey, show_toast, hide_toast, hold_toast, store::cj_is_store, store::cj_autostart])
         .setup(|app| {
             let show_i = MenuItem::with_id(app, "show", "위젯 보기 / 숨기기", true, None::<&str>)?;
             let center_i = MenuItem::with_id(app, "center", "화면 중앙으로 되돌리기", true, None::<&str>)?;
