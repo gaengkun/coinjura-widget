@@ -4,7 +4,7 @@
  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
  IgnorableNamespaces="uap desktop rescap">
-  <Identity Name="D0A75DB0.4481814E6364E" Publisher="CN=018E8EDC-E534-47DB-8564-33CF013A600A" Version="0.7.15.0" ProcessorArchitecture="x64" />
+  <Identity Name="D0A75DB0.4481814E6364E" Publisher="CN=018E8EDC-E534-47DB-8564-33CF013A600A" Version="0.7.16.0" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>코인주라 위젯</DisplayName>
     <PublisherDisplayName>코인주라</PublisherDisplayName>

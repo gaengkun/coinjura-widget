@@ -368,47 +368,40 @@ function activeEx(){ // 현재 보고있는 거래소(설정된 것 중 첫번�
   if(!exchanges.includes(cfg._sel)) cfg._sel=exchanges[0];
   return cfg._sel;
 }
-function renderExBtns(){
-  $("#exbtns").innerHTML=cfg.ex.filter(e=>cjCoinsFor(cfg,e).length).map(e=>
-    `<button class="exbtn ${e===activeEx()?"on":""}" data-e="${e}">${EX_NAME[e]}</button>`
-  ).join("") || '<span style="font-size:10px;color:var(--tx3)">거래소를 설정하세요</span>';
-}
 function gridCols(){
   // 표시 항목에 따라 grid-template 구성
   const parts=[];
-  if(cfg.cols.includes("tkr")||cfg.cols.includes("name")) parts.push("1fr");
+  parts.push(cfg.cols.includes("tkr")||cfg.cols.includes("name")?"minmax(0,1fr)":"max-content");
   if(cfg.cols.includes("price")) parts.push("84px");
   if(cfg.cols.includes("chg")) parts.push("58px");
   if(cfg.cols.includes("kimp")) parts.push("44px");
   return parts.join(" ");
 }
 function render(){
-  renderExBtns();
   const gc=gridCols();
   // header
   const h=[];
-  if(cfg.cols.includes("tkr")||cfg.cols.includes("name")) h.push('<div>코인</div>');
+  h.push('<div>'+(cfg.cols.includes("tkr")||cfg.cols.includes("name")?"코인":"거래소")+'</div>');
   if(cfg.cols.includes("price")) h.push('<div class="r">시세</div>');
   if(cfg.cols.includes("chg")) h.push('<div class="r">24h</div>');
   if(cfg.cols.includes("kimp")) h.push('<div class="r">김프</div>');
   const lh=$("#lhead"); lh.style.gridTemplateColumns=gc; lh.innerHTML=h.join("");
 
-  const ex=activeEx();
-  const coins=cjCoinsFor(cfg,ex);
-  if(!ex||!coins.length){ $("#rows").innerHTML='<div class="empty">설정에서 코인을 추가하세요.</div>'; return; }
+  const watched=cfg.ex.flatMap(ex=>cjCoinsFor(cfg,ex).map(sym=>({sym,ex})));
+  if(!watched.length){ $("#rows").innerHTML='<div class="empty">설정에서 코인을 추가하세요.</div>'; return; }
 
-  const rows=coins.map(sym=>{
+  const rows=watched.map(({sym,ex})=>{
     const q=quote(sym,ex);
     const cells=[];
-    if(cfg.cols.includes("tkr")||cfg.cols.includes("name")){
+    {
       const t=cfg.cols.includes("tkr")?`<span class="tkr">${sym}</span>`:"";
       const n=cfg.cols.includes("name")?`<span class="nm">${nameOf(sym)}</span>`:"";
-      cells.push(`<div style="display:flex;align-items:baseline;gap:5px;min-width:0">${t}${n}</div>`);
+      cells.push(`<div class="cj-quote-coin">${t}${n}<span class="cj-quote-ex" data-exchange="${ex}" title="${EX_NAME[ex]}" aria-label="${EX_NAME[ex]}">${EX_SHORT[ex]}</span></div>`);
     }
     if(cfg.cols.includes("price")) cells.push(`<div class="px">${q?fmtPx(q.price,q.cur):"—"}</div>`);
     if(cfg.cols.includes("chg")){ const c=q?q.c24:null; cells.push(`<div class="cg ${cls(c)}">${chgTxt(c)}</div>`); }
     if(cfg.cols.includes("kimp")){ const kp=kimp(sym,ex); cells.push(`<div class="kp ${cls(kp)}">${kimpTxt(kp)}</div>`); }
-    return `<div class="row" style="grid-template-columns:${gc}">${cells.join("")}</div>`;
+    return `<div class="row" data-exchange="${ex}" style="grid-template-columns:${gc}">${cells.join("")}</div>`;
   }).join("");
   $("#rows").innerHTML=rows;
 }
@@ -515,7 +508,6 @@ function closeSettings(){
 }
 
 /* ---------- events ---------- */
-$("#exbtns").addEventListener("click",e=>{ const b=e.target.closest(".exbtn"); if(!b)return; cfg._sel=b.dataset.e; render(); });
 $("#toSettings").addEventListener("click",openSettings);
 $("#toMain").addEventListener("click",closeSettings);
 

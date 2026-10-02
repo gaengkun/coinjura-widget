@@ -44,7 +44,10 @@ assert.equal(element("#cjCoinPickerTitle").textContent,"업비트로 보실 코�
 assert.equal((element("#exChips").innerHTML.match(/ checked/g)||[]).length,1);
 assert(!element("#plist").innerHTML.includes('data-add="CAKE"'));
 assert(!element("#picked").innerHTML.includes("CAKE"));
-assert(!element("#rows").innerHTML.includes("CAKE"));
+assert(element("#rows").innerHTML.includes("CAKE"));
+assert.equal((element("#rows").innerHTML.match(/class="row"/g)||[]).length,3);
+assert(element("#rows").innerHTML.includes('aria-label="업비트"'));
+assert(element("#rows").innerHTML.includes('aria-label="빗썸"'));
 assert.deepEqual(value("cfg.coinsByEx.B"),["BTC","CAKE"]); // Legacy selection survives.
 
 exchange("B");
@@ -65,8 +68,13 @@ click("#save",{});
 assert.deepEqual(JSON.parse(storage.get("cj_widget")).coinsByEx.B,["BTC","CAKE"]);
 assert.deepEqual(value("loadCfg().coinsByEx.B"),["BTC","CAKE"]);
 assert(element("#rows").innerHTML.includes("CAKE"));
+const combinedRows=element("#rows").innerHTML;
 run('cfg._sel="U"; render()');
-assert(!element("#rows").innerHTML.includes("CAKE"));
+assert.equal(element("#rows").innerHTML,combinedRows);
+run('const savedCols=cfg.cols.slice(); cfg.cols=["price"]; render();');
+assert(element("#lhead").innerHTML.includes("거래소"));
+assert(element("#rows").innerHTML.includes('aria-label="빗썸"'));
+run('cfg.cols=savedCols; render()');
 
 exchange("BN");
 assert.equal(element("#cjCoinPickerTitle").textContent,"바이낸스로 보실 코인을 선택해주세요");

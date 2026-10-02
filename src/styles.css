@@ -62,14 +62,14 @@
   /* ===== widget (main) ===== */
   #main{}
   .wtop{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--line)}
-  .exbtns{display:flex;gap:3px;flex-wrap:wrap;min-width:0}
-  .exbtn{background:var(--card2);border:1px solid var(--line);color:var(--tx2);font-size:11px;
-    padding:3px 7px;border-radius:6px;font-weight:600}
-  .exbtn.on{color:#fff;border-color:transparent}
-  .exbtn.on[data-e="U"]{background:var(--U)}
-  .exbtn.on[data-e="B"]{background:var(--B);color:#1a1400}
-  .exbtn.on[data-e="BN"]{background:var(--BN);color:#1a1400}
-  .exbtn.on[data-e="BY"]{background:var(--BY);color:#1a0d00}
+  .cj-quote-coin{display:flex;align-items:center;gap:4px;min-width:0}
+  .cj-quote-coin .tkr{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cj-quote-coin .nm{min-width:0}
+  .cj-quote-ex{font-size:9px;font-weight:700;line-height:1;padding:2px 3px;border-radius:4px;flex:none;white-space:nowrap}
+  .cj-quote-ex[data-exchange="U"]{background:var(--U);color:#fff}
+  .cj-quote-ex[data-exchange="B"]{background:var(--B);color:#1a1400}
+  .cj-quote-ex[data-exchange="BN"]{background:var(--BN);color:#1a1400}
+  .cj-quote-ex[data-exchange="BY"]{background:var(--BY);color:#1a0d00}
   .gear{margin-left:auto;background:none;border:none;color:var(--tx3);font-size:14px;line-height:1;padding:2px 4px;border-radius:5px}
   .gear:hover{color:var(--tx);background:var(--card2)}
   .live{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--tx3)}
