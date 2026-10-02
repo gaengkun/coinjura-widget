@@ -678,7 +678,7 @@ $("#save").addEventListener("click",()=>{
 });
 
 /* ---------- window controls (Tauri) ---------- */
-let ui={ opa:100, layer:"bottom", snap:true, hotkey:"", pos:null, theme:"dark" };
+let ui={ opa:100, layer:"normal", snap:true, hotkey:"", pos:null, theme:"dark" };
 try{
   const u=JSON.parse(localStorage.getItem("cj_widget_ui"));
   if(u){
@@ -688,7 +688,7 @@ try{
     if(typeof u.pin==="boolean" && !["normal","top","bottom"].includes(u.layer)) ui.layer=u.pin?"top":"bottom";
   }
 }catch(e){}
-if(!["normal","top","bottom"].includes(ui.layer)) ui.layer="bottom";
+if(!["normal","top","bottom"].includes(ui.layer)) ui.layer="normal";
 function saveUi(){ try{ localStorage.setItem("cj_widget_ui",JSON.stringify(ui)); }catch(e){} }
 function appWin(){ return T&&T.window? T.window.getCurrentWindow() : null; }
 const TW=T&&T.window;

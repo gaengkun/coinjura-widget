@@ -206,8 +206,8 @@ const layerCode=source.slice(source.indexOf('let ui='),source.indexOf('/* --- íˆ
   +source.slice(source.indexOf('$("#pinBtn").addEventListener'),source.indexOf('$("#closeBtn").addEventListener'));
 const layerModes=["normal","top","bottom"];
 const expectedCalls=layer=>layer==="bottom"?[["top",false],["bottom",true]]:[["bottom",false],["top",layer==="top"]];
-for(const [saved,expected] of [[null,"bottom"],[{layer:"normal"},"normal"],[{layer:"normal",pin:true},"normal"],
-  [{layer:"normal",pin:false},"normal"],[{layer:"unknown"},"bottom"],[{layer:"unknown",pin:true},"top"],
+for(const [saved,expected] of [[null,"normal"],[{},"normal"],[{theme:"light"},"normal"],[{layer:"normal"},"normal"],[{layer:"normal",pin:true},"normal"],
+  [{layer:"normal",pin:false},"normal"],[{layer:"unknown"},"normal"],[{layer:"unknown",pin:true},"top"],
   [{pin:false},"bottom"],[{pin:true},"top"],[{layer:"top",pin:false},"top"],[{layer:"bottom"},"bottom"]]){
   const fields=new Map(), calls=[], layerButtons=layerModes.map(layer=>({dataset:{layer},classList:{toggle(_,on){this.on=on;}}}));
   const field=selector=>{
@@ -258,7 +258,7 @@ const nativeWindows=JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.jso
 const appVersion=JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json",import.meta.url),"utf8")).version;
 assert(readFileSync(new URL("../store/AppxManifest.xml",import.meta.url),"utf8").includes('Version="'+appVersion+'.0"'));
 assert.equal(nativeWindows.find(window=>window.label==="main").alwaysOnTop,false);
-assert.equal(nativeWindows.find(window=>window.label==="main").alwaysOnBottom,true);
+assert.equal(nativeWindows.find(window=>window.label==="main").alwaysOnBottom,false);
 assert.equal(nativeWindows.find(window=>window.label==="toast").alwaysOnTop,true);
 assert.deepEqual([...readFileSync(new URL("../src/index.html",import.meta.url),"utf8").matchAll(/data-layer="([^"]+)"/g)].map(match=>match[1]),layerModes);
-console.log("PASS: normal/top/bottom layers, native calls, persistence/restart, legacy migration, pin toggle and unchanged defaults");
+console.log("PASS: normal/top/bottom layers, native calls, persistence/restart, legacy migration, pin toggle and normal startup defaults");
