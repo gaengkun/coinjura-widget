@@ -310,6 +310,7 @@ const fitEnvironment={
   document:{documentElement:{dataset:{}},getElementById(id){return id==="bar"?fitBar:fitGrip;},addEventListener(name,fn){if(name==="mousedown")fitMouseDown=fn;}}
 };
 vm.runInNewContext(toast.match(/<script>([\s\S]*?)<\/script>/)[1],fitEnvironment);
+fitStorage.set("cj_widget_toastsize",JSON.stringify({width:328,height:116}));
 await fitWindow.__cjPlay(2200,1000);
 assert.deepEqual({...fitSize},{width:626,height:139});
 assert.deepEqual({...fitPosition},{x:1606,y:573});
@@ -345,7 +346,7 @@ assert.equal(fitCalls.at(-1).command,"hold_toast");
 assert.equal(fitCalls.at(-1).args.active,true);
 fitGrip.handlers.pointermove(pointer(196,140));
 await fitGrip.handlers.pointerup();
-assert.deepEqual(JSON.parse(fitStorage.get("cj_widget_toastsize")),{width:722,height:179});
+assert.deepEqual(JSON.parse(fitStorage.get("cj_widget_toastsize")),{width:722,height:179,layout:1});
 assert.deepEqual(JSON.parse(fitStorage.get("cj_widget_ui")),{size:{width:320,height:480}});
 assert.equal(fitCalls.at(-1).args.active,false);
 await fitWindow.__cjPlay(0,0);
@@ -354,8 +355,8 @@ vm.runInNewContext(toast.match(/<script>([\s\S]*?)<\/script>/)[1],{...fitEnviron
 await fitWindow.__cjPlay(0,0);
 assert.deepEqual({...fitSize},{width:722,height:179}); // Fresh script restores its separate size.
 await fitGrip.handlers.keydown({key:"ArrowRight",preventDefault(){},stopPropagation(){}});
-assert.deepEqual(JSON.parse(fitStorage.get("cj_widget_toastsize")),{width:738,height:179});
-fitStorage.set("cj_widget_toastsize",'{"width":0,"height":"invalid"}');
+assert.deepEqual(JSON.parse(fitStorage.get("cj_widget_toastsize")),{width:738,height:179,layout:1});
+fitStorage.set("cj_widget_toastsize",'{"width":0,"height":"invalid","layout":1}');
 await fitWindow.__cjPlay(0,0);
 assert.deepEqual({...fitSize},{width:626,height:139});
 const toastConfig=JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json",import.meta.url),"utf8")).app.windows.find(w=>w.label==="toast");
@@ -364,7 +365,7 @@ assert.equal(toastConfig.minWidth,240);
 assert.equal(toastConfig.minHeight,54);
 assert.equal(toast.match(/id="cjToastResize"[^>]*>([^<]*)</)[1],"");
 assert(/scrollbar-width:none/.test(toast));
-console.log("PASS: initial unwrapped size, hidden scrollbar/icon, separate pointer/keyboard resize, restart and main-size isolation");
+console.log("PASS: legacy cramped size migration, initial content fit, manual-size preservation, hidden scrollbar/icon and restart");
 
 // Run the actual checkbox loading/saving path, including legacy defaults and restart.
 const opacityCode=source.slice(source.indexOf('let ui='),source.indexOf('/* --- 투명도:'))

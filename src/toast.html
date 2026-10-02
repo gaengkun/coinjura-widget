@@ -95,10 +95,11 @@
   function savePos(x,y){
     try{ localStorage.setItem("cj_widget_toastpos", JSON.stringify({x,y})); }catch(e){}
   }
+  const CJ_TOAST_LAYOUT=1; // 이전 알림 배치에서 저장된 좁은 크기는 자동 맞춤으로 이관한다.
   function cjToastSize(){
     try{
       const size=JSON.parse(localStorage.getItem("cj_widget_toastsize"));
-      return size && Number.isFinite(size.width) && size.width>=240 &&
+      return size && size.layout===CJ_TOAST_LAYOUT && Number.isFinite(size.width) && size.width>=240 &&
         Number.isFinite(size.height) && size.height>=54 ? size : null;
     }catch(e){return null;}
   }
@@ -123,7 +124,7 @@
         while(cjResizeNext){
           const size=cjResizeNext; cjResizeNext=null;
           await TW.getCurrentWindow().setSize(new TW.LogicalSize(size.width,size.height));
-          try{localStorage.setItem("cj_widget_toastsize",JSON.stringify(size));}catch(e){}
+          try{localStorage.setItem("cj_widget_toastsize",JSON.stringify({...size,layout:CJ_TOAST_LAYOUT}));}catch(e){}
         }
       })().catch(()=>{cjResizeNext=null;}).finally(()=>{cjResizeWork=null;});
     }
