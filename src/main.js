@@ -497,6 +497,7 @@ $("#cjAutostart").addEventListener("change",async()=>{
 });
 
 function openSettings(){
+  cjSaveWindowSize();
   draft=JSON.parse(JSON.stringify(cfg));
   cjPickerEx=activeEx()||cfg.ex[0];
   renderExChips(); renderColChips(); renderAlertChips(); renderWinChips(); renderPicker();
@@ -507,7 +508,11 @@ function openSettings(){
   $("#main").classList.remove("on"); $("#settings").classList.add("on");
   document.querySelector(".body").scrollTop=0;
 }
-function closeSettings(){ $("#settings").classList.remove("on"); $("#main").classList.add("on"); }
+function closeSettings(){
+  cjSaveWindowSize();
+  $("#settings").classList.remove("on"); $("#main").classList.add("on");
+  void cjRestoreWindowSize();
+}
 
 /* ---------- events ---------- */
 $("#exbtns").addEventListener("click",e=>{ const b=e.target.closest(".exbtn"); if(!b)return; cfg._sel=b.dataset.e; render(); });
@@ -596,7 +601,7 @@ $("#save").addEventListener("click",()=>{
 });
 
 /* ---------- window controls (Tauri) ---------- */
-let ui={ opa:100, layer:"normal", snap:true, hotkey:"", pos:null, theme:"dark" };
+let ui={ opa:100, layer:"normal", snap:true, hotkey:"", pos:null, size:null, theme:"dark" };
 try{
   const u=JSON.parse(localStorage.getItem("cj_widget_ui"));
   if(u){
@@ -830,12 +835,38 @@ async function openSite(url){
     try{ window.open(u,"_blank"); }catch(e2){}
   }
 }
+// 창 크기는 시세 설정과 별도로 저장해 설정 저장·화면 전환·재실행에도 유지한다.
+let cjRestoringSize=false, cjSizeSaveTimer=null;
+function cjValidWindowSize(size){
+  return size && Number.isFinite(size.width) && Number.isFinite(size.height)
+    && size.width>=260 && size.height>=160;
+}
+function cjSaveWindowSize(){
+  const size={width:window.innerWidth,height:window.innerHeight};
+  if(!IS_APP||cjRestoringSize||!cjValidWindowSize(size)) return;
+  ui.size=size; saveUi();
+}
+async function cjRestoreWindowSize(){
+  const w=appWin(), size=ui.size;
+  if(!w||!TW||!cjValidWindowSize(size)) return;
+  cjRestoringSize=true;
+  try{ await w.setSize(new TW.LogicalSize(size.width,size.height)); }
+  catch(e){}
+  finally{ cjRestoringSize=false; }
+}
+if(IS_APP) window.addEventListener("resize",()=>{
+  clearTimeout(cjSizeSaveTimer);
+  cjSizeSaveTimer=setTimeout(cjSaveWindowSize,150);
+});
+
 // 저장된 위치 복원 — 모니터 구성이 바뀌었을 수 있으니 실제 화면 안으로 끌어온다.
 // 복원 때는 겨우 걸친 상태로 되살아나면 못 찾으므로 넉넉히(80px) 요구한다.
 async function restorePos(){
-  if(!ui.pos||!TW) return;
+  if(!TW) return;
   const w=appWin(); if(!w) return;
   try{
+    await cjRestoreWindowSize();
+    if(!ui.pos) return;
     await loadMonitors();
     const sf=await w.scaleFactor(), s=await w.outerSize();
     const r=rescue(ui.pos.x,ui.pos.y,s.width/sf,s.height/sf,80);

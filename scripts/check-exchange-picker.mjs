@@ -16,6 +16,7 @@ function element(selector){
 }
 const context=vm.createContext({
   console, AbortController, setTimeout(){return 0;},clearTimeout(){},
+  cjSaveWindowSize(){},cjRestoreWindowSize:async()=>{},
   window:{fetch:async()=>{throw new Error("Network is not used in this check");}},
   document:{documentElement:{dataset:{}},querySelector:element},
   localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)}
@@ -328,3 +329,50 @@ assert.equal(nativeWindows.find(window=>window.label==="main").alwaysOnBottom,fa
 assert.equal(nativeWindows.find(window=>window.label==="toast").alwaysOnTop,true);
 assert.deepEqual([...readFileSync(new URL("../src/index.html",import.meta.url),"utf8").matchAll(/data-layer="([^"]+)"/g)].map(match=>match[1]),layerModes);
 console.log("PASS: normal/top/bottom layers, native calls, persistence/restart, legacy migration, pin toggle and normal startup defaults");
+
+// Exercise the real size storage and settings-return code without a desktop session.
+const sizeCode=source.slice(source.indexOf('let ui='),source.indexOf('/* --- 투명도:'))
+  +source.slice(source.indexOf('// 창 크기는 시세 설정'),source.indexOf('// 저장된 위치 복원'))
+  +source.slice(source.indexOf('function closeSettings()'),source.indexOf('/* ---------- events ---------- */'));
+let savedSizeUi=null, resizeTimer=null, sizeWrites=0;
+const sizeEvents={}, nativeSizes=[];
+const sizeWindow={innerWidth:420,innerHeight:280,addEventListener(name,callback){sizeEvents[name]=callback;}};
+class LogicalSize {constructor(width,height){this.width=width;this.height=height;}}
+const sizeEnvironment={IS_APP:true,window:sizeWindow,
+  T:{window:{LogicalSize,getCurrentWindow(){return {async setSize(size){
+    assert(size instanceof LogicalSize);nativeSizes.push([size.width,size.height]);
+    sizeWindow.innerWidth=size.width;sizeWindow.innerHeight=size.height;
+  }};}}},
+  $:selector=>({classList:{remove(){},add(){if(selector==="#main"){sizeWindow.innerWidth=300;sizeWindow.innerHeight=430;}}}}),
+  setTimeout(callback){resizeTimer=callback;return 1;},clearTimeout(){resizeTimer=null;},
+  localStorage:{getItem(){return JSON.stringify(savedSizeUi);},setItem(_,value){savedSizeUi=JSON.parse(value);sizeWrites++;}}
+};
+const sizeContext=vm.createContext(sizeEnvironment);
+vm.runInContext(sizeCode,sizeContext);
+vm.runInContext('cjSaveWindowSize()',sizeContext);
+assert.deepEqual(savedSizeUi.size,{width:420,height:280});
+sizeWindow.innerWidth=620;sizeWindow.innerHeight=360;
+for(let i=0;i<20;i++)sizeEvents.resize();
+assert.equal(sizeWrites,1); // Dragging does not write storage for every frame.
+resizeTimer();assert.equal(sizeWrites,2);
+sizeWindow.innerWidth=740;sizeWindow.innerHeight=400;
+sizeEvents.resize(); // A resize immediately followed by Save must not use the older debounced size.
+vm.runInContext('closeSettings()',sizeContext);
+await new Promise(resolve=>setImmediate(resolve));
+assert.deepEqual(nativeSizes.at(-1),[740,400]); // Restore the user's size after a settings-return reset.
+assert.deepEqual(savedSizeUi.size,{width:740,height:400});
+const sizeRestart=vm.createContext({...sizeEnvironment});
+vm.runInContext(sizeCode,sizeRestart);
+await vm.runInContext('cjRestoreWindowSize()',sizeRestart);
+assert.deepEqual(nativeSizes.at(-1),[740,400]);
+sizeWindow.innerWidth=0;sizeWindow.innerHeight=0;
+vm.runInContext('cjSaveWindowSize()',sizeRestart);
+assert.deepEqual(savedSizeUi.size,{width:740,height:400}); // Hidden/minimized dimensions cannot erase it.
+for(const invalid of [null,{}, {width:"620",height:360}, {width:259,height:360}, {width:620,height:159}]){
+  sizeRestart.invalidSize=invalid;
+  vm.runInContext('ui.size=invalidSize',sizeRestart);
+  const calls=nativeSizes.length;
+  await vm.runInContext('cjRestoreWindowSize()',sizeRestart);
+  assert.equal(nativeSizes.length,calls);
+}
+console.log("PASS: resized window storage, debouncing, settings-return preservation, restart and invalid/minimized sizes");
