@@ -204,35 +204,55 @@ const layerCode=source.slice(source.indexOf('let ui='),source.indexOf('/* --- �
   +source.slice(source.indexOf('function syncWinControls()'),source.indexOf('// 슬라이더는'))
   +source.slice(source.indexOf('$("#layerSeg").addEventListener'),source.indexOf('$("#snapChk").addEventListener'))
   +source.slice(source.indexOf('$("#pinBtn").addEventListener'),source.indexOf('$("#closeBtn").addEventListener'));
-for(const [saved,expected] of [[null,"bottom"],[{layer:"normal"},"bottom"],[{layer:"unknown"},"bottom"],
+const layerModes=["normal","top","bottom"];
+const expectedCalls=layer=>layer==="bottom"?[["top",false],["bottom",true]]:[["bottom",false],["top",layer==="top"]];
+for(const [saved,expected] of [[null,"bottom"],[{layer:"normal"},"normal"],[{layer:"normal",pin:true},"normal"],
+  [{layer:"normal",pin:false},"normal"],[{layer:"unknown"},"bottom"],[{layer:"unknown",pin:true},"top"],
   [{pin:false},"bottom"],[{pin:true},"top"],[{layer:"top",pin:false},"top"],[{layer:"bottom"},"bottom"]]){
-  const fields=new Map(), calls=[], layerButtons=["top","bottom"].map(layer=>({dataset:{layer},classList:{toggle(_,on){this.on=on;}}}));
+  const fields=new Map(), calls=[], layerButtons=layerModes.map(layer=>({dataset:{layer},classList:{toggle(_,on){this.on=on;}}}));
   const field=selector=>{
     if(!fields.has(selector)) fields.set(selector,{dataset:{},classList:{toggle(_,on){this.on=on;}},
       setAttribute(key,value){this[key]=value;},addEventListener(type,handler){this[type]=handler;}});
     return fields.get(selector);
   };
   let persisted=saved;
-  const layerContext=vm.createContext({$:field,
+  const environment={$:field,
     document:{querySelectorAll(){return layerButtons;}},
     localStorage:{getItem(){return JSON.stringify(persisted);},setItem(_,value){persisted=JSON.parse(value);}},
     T:{window:{getCurrentWindow(){return {async setAlwaysOnTop(on){calls.push(["top",on]);},async setAlwaysOnBottom(on){calls.push(["bottom",on]);}};}}}
-  });
+  };
+  const layerContext=vm.createContext(environment);
   vm.runInContext(layerCode,layerContext);
   assert.equal(vm.runInContext('ui.layer',layerContext),expected);
   await vm.runInContext('applyLayer()',layerContext);
   vm.runInContext('syncWinControls()',layerContext);
   assert.equal(field("#pinBtn")["aria-pressed"],String(expected==="top"));
   assert.equal(layerButtons.find(button=>button.classList.on).dataset.layer,expected);
-  assert.deepEqual(calls,expected==="bottom"?[["top",false],["bottom",true]]:[["bottom",false],["top",true]]);
+  assert.deepEqual(calls,expectedCalls(expected));
+  if(expected==="normal") assert(field("#pinBtn").dataset.tip.startsWith("일반"));
   field("#pinBtn").click();
-  await Promise.resolve(); await Promise.resolve();
+  await new Promise(resolve=>setImmediate(resolve));
   assert.equal(persisted.layer,expected==="top"?"bottom":"top");
   assert.equal(layerButtons.find(button=>button.classList.on).dataset.layer,persisted.layer);
-  field("#layerSeg").click({target:{closest(){return layerButtons[1];}}});
-  await Promise.resolve(); await Promise.resolve();
-  assert.equal(persisted.layer,"bottom");
-  assert.equal(field("#pinBtn")["aria-pressed"],"false");
+  // All three modes must switch correctly from every preceding mode and survive a restart.
+  for(const previous of layerButtons){
+    for(const button of layerButtons){
+      field("#layerSeg").click({target:{closest(){return previous;}}});
+      await new Promise(resolve=>setImmediate(resolve));
+      calls.length=0;
+      field("#layerSeg").click({target:{closest(){return button;}}});
+      await new Promise(resolve=>setImmediate(resolve));
+      const mode=button.dataset.layer;
+      assert.equal(persisted.layer,mode);
+      assert.equal(field("#pinBtn")["aria-pressed"],String(mode==="top"));
+      assert.equal(layerButtons.filter(button=>button.classList.on).length,1);
+      assert.equal(layerButtons.find(button=>button.classList.on).dataset.layer,mode);
+      assert.deepEqual(calls,expectedCalls(mode));
+      const restored=vm.createContext({...environment});
+      vm.runInContext(layerCode.split('async function applyLayer()')[0],restored);
+      assert.equal(vm.runInContext('ui.layer',restored),mode);
+    }
+  }
 }
 const nativeWindows=JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json",import.meta.url),"utf8")).app.windows;
 const appVersion=JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json",import.meta.url),"utf8")).version;
@@ -240,5 +260,5 @@ assert(readFileSync(new URL("../store/AppxManifest.xml",import.meta.url),"utf8")
 assert.equal(nativeWindows.find(window=>window.label==="main").alwaysOnTop,false);
 assert.equal(nativeWindows.find(window=>window.label==="main").alwaysOnBottom,true);
 assert.equal(nativeWindows.find(window=>window.label==="toast").alwaysOnTop,true);
-assert(!readFileSync(new URL("../src/index.html",import.meta.url),"utf8").includes('data-layer="normal"'));
-console.log("PASS: default bottom layer, legacy migration, pin toggle, settings sync and native window defaults");
+assert.deepEqual([...readFileSync(new URL("../src/index.html",import.meta.url),"utf8").matchAll(/data-layer="([^"]+)"/g)].map(match=>match[1]),layerModes);
+console.log("PASS: normal/top/bottom layers, native calls, persistence/restart, legacy migration, pin toggle and unchanged defaults");

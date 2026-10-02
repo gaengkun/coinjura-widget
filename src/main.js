@@ -685,10 +685,10 @@ try{
     ui={...ui,...u};
     // 구버전 마이그레이션: opa는 0~3 인덱스, pin은 불리언이었다
     if(typeof u.opa==="number"&&u.opa<=3) ui.opa=[100,90,75,60][u.opa]||100;
-    if(typeof u.pin==="boolean" && !["top","bottom"].includes(u.layer)) ui.layer=u.pin?"top":"bottom";
+    if(typeof u.pin==="boolean" && !["normal","top","bottom"].includes(u.layer)) ui.layer=u.pin?"top":"bottom";
   }
 }catch(e){}
-if(ui.layer!=="top") ui.layer="bottom";
+if(!["normal","top","bottom"].includes(ui.layer)) ui.layer="bottom";
 function saveUi(){ try{ localStorage.setItem("cj_widget_ui",JSON.stringify(ui)); }catch(e){} }
 function appWin(){ return T&&T.window? T.window.getCurrentWindow() : null; }
 const TW=T&&T.window;
@@ -717,7 +717,7 @@ $("#themeBtn").addEventListener("click",()=>{
 /* --- 레이어 순위 --- */
 async function applyLayer(){
   $("#pinBtn").classList.toggle("on",ui.layer==="top");
-  $("#pinBtn").dataset.tip = ui.layer==="top"?"항상 위 (켜짐) · 누르면 항상 뒤":"항상 뒤 (고정 꺼짐) · 누르면 항상 위";
+  $("#pinBtn").dataset.tip = ui.layer==="top"?"항상 위 (켜짐) · 누르면 항상 뒤":ui.layer==="normal"?"일반 (고정 꺼짐) · 누르면 항상 위":"항상 뒤 (고정 꺼짐) · 누르면 항상 위";
   $("#pinBtn").setAttribute("aria-pressed",String(ui.layer==="top"));
   const w=appWin(); if(!w) return;
   try{
@@ -729,7 +729,7 @@ async function applyLayer(){
       if(typeof w.setAlwaysOnBottom==="function") await w.setAlwaysOnBottom(true);
     }else{
       if(typeof w.setAlwaysOnBottom==="function") await w.setAlwaysOnBottom(false);
-      await w.setAlwaysOnTop(true);
+      await w.setAlwaysOnTop(ui.layer==="top");
     }
   }catch(e){}
 }
