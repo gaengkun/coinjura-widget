@@ -16,10 +16,14 @@
 
   /* 알림 투명도 적용을 켜면 위젯 설정을 따른다. 나타나고 사라지는 건 JS 가 transition 으로
      몰기 때문에 여기서는 초기 상태(안 보임)만 잡아둔다. */
-  .bar{height:100%;display:flex;flex-direction:column;gap:2px;overflow-y:auto;
+  .bar{height:100%;display:flex;flex-direction:column;gap:2px;overflow-y:auto;scrollbar-width:none;
     background:var(--card);border:0;border-radius:10px;
-    padding:6px 14px 6px;box-shadow:0 8px 22px -8px rgba(0,0,0,.6);
+    padding:6px 10px;box-shadow:0 8px 22px -8px rgba(0,0,0,.6);
     opacity:0}
+
+  .bar::-webkit-scrollbar{display:none}
+  .bar.cj-toast-measuring .cj-toast-head{flex-wrap:nowrap}
+  .bar.cj-toast-measuring .nmw{flex:none}
 
   /* 거래소별 한 줄. 행 23px + 간격 2px을 Rust 창 높이에도 반영한다. */
   .ln{display:flex;align-items:center;min-height:23px;padding:2px 0;flex:none;color:var(--tx)}
@@ -44,12 +48,12 @@
   .up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--tx2)}
   .cj-toast-resize{position:absolute;right:2px;bottom:2px;width:14px;height:14px;z-index:1;
     border:0;background:transparent;color:var(--tx2);cursor:nwse-resize;touch-action:none;
-    font-size:9px;line-height:14px;text-align:right;opacity:0;pointer-events:none}
+    opacity:0;pointer-events:none}
   .cj-toast-resize:focus-visible{outline:1px solid var(--accent-tx)}
 </style>
 
 <div class="bar" id="bar"></div>
-<button type="button" class="cj-toast-resize" id="cjToastResize" aria-label="알림창 크기 조절" title="끌어서 크기 조절 · 방향키로 조절">◢</button>
+<button type="button" class="cj-toast-resize" id="cjToastResize" aria-label="알림창 크기 조절" title="모서리를 끌어서 크기 조절 · 방향키로 조절"></button>
 
 <script>
   const T=window.__TAURI__;
@@ -266,11 +270,13 @@
       const mw=wa.size.width/sf, mh=wa.size.height/sf;
       cjToastBounds={width:Math.max(1,mw-16),height:Math.max(1,mh-16)};
       const saved=cjToastSize();
-      // 실제 HTML 너비를 재고, 화면 폭을 넘는 경우에만 줄바꿈한다.
+      // 줄바꿈 없는 전체 너비를 먼저 잰다. 저장된 수동 크기는 그대로 복원한다.
+      b.classList.add("cj-toast-measuring");
       b.style.width="max-content";
       b.style.height="auto";
-      const width=Math.min(saved?saved.width:Math.max(240,b.offsetWidth),cjToastBounds.width);
+      const width=Math.min(saved?saved.width:Math.max(240,b.offsetWidth+2),cjToastBounds.width);
       b.style.width=width+"px";
+      b.classList.remove("cj-toast-measuring");
       const height=Math.min(saved?saved.height:Math.max(54,b.offsetHeight),cjToastBounds.height);
       const x=Math.max(mx+8,Math.min(base.x,mx+mw-width-8));
       const y=Math.max(my+8,Math.min(base.y,my+mh-height-8));
@@ -279,6 +285,7 @@
       await w.setPosition(new TW.LogicalPosition(x,y));
       base={x,y};
     }catch(e){} finally{
+      b.classList.remove("cj-toast-measuring");
       b.style.width="";
       b.style.height="";
     }

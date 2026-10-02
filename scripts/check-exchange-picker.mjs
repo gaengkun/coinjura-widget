@@ -289,7 +289,9 @@ for(const [saved,opacity] of [[{},"1"],[{opa:35},"0.35"],[{opa:35,toastOpa:true}
 }
 
 // Exercise measured sizing, DPI/work-area bounds and closing while fitting.
-const fitBar={style:{},get offsetWidth(){return 624;},
+const fitClasses=new Set();
+const fitBar={style:{},classList:{add(value){fitClasses.add(value);},remove(value){fitClasses.delete(value);}},
+  get offsetWidth(){assert(fitClasses.has("cj-toast-measuring"));return 624;},
   get offsetHeight(){return parseFloat(this.style.width)<624?188:139;}
 };
 let fitMonitor={scaleFactor:2,workArea:{position:{x:1920,y:0},size:{width:2560,height:1440}}};
@@ -309,10 +311,11 @@ const fitEnvironment={
 };
 vm.runInNewContext(toast.match(/<script>([\s\S]*?)<\/script>/)[1],fitEnvironment);
 await fitWindow.__cjPlay(2200,1000);
-assert.deepEqual({...fitSize},{width:624,height:139});
-assert.deepEqual({...fitPosition},{x:1608,y:573});
+assert.deepEqual({...fitSize},{width:626,height:139});
+assert.deepEqual({...fitPosition},{x:1606,y:573});
 assert.equal(fitBar.style.width,"");
 assert.equal(fitBar.style.height,"");
+assert.equal(fitClasses.size,0);
 fitMonitor={scaleFactor:2,position:{x:0,y:0},size:{width:800,height:600}};
 await fitWindow.__cjPlay(-50,-50);
 assert.deepEqual({...fitSize},{width:384,height:188});
@@ -342,24 +345,26 @@ assert.equal(fitCalls.at(-1).command,"hold_toast");
 assert.equal(fitCalls.at(-1).args.active,true);
 fitGrip.handlers.pointermove(pointer(196,140));
 await fitGrip.handlers.pointerup();
-assert.deepEqual(JSON.parse(fitStorage.get("cj_widget_toastsize")),{width:720,height:179});
+assert.deepEqual(JSON.parse(fitStorage.get("cj_widget_toastsize")),{width:722,height:179});
 assert.deepEqual(JSON.parse(fitStorage.get("cj_widget_ui")),{size:{width:320,height:480}});
 assert.equal(fitCalls.at(-1).args.active,false);
 await fitWindow.__cjPlay(0,0);
-assert.deepEqual({...fitSize},{width:720,height:179});
+assert.deepEqual({...fitSize},{width:722,height:179});
 vm.runInNewContext(toast.match(/<script>([\s\S]*?)<\/script>/)[1],{...fitEnvironment});
 await fitWindow.__cjPlay(0,0);
-assert.deepEqual({...fitSize},{width:720,height:179}); // Fresh script restores its separate size.
+assert.deepEqual({...fitSize},{width:722,height:179}); // Fresh script restores its separate size.
 await fitGrip.handlers.keydown({key:"ArrowRight",preventDefault(){},stopPropagation(){}});
-assert.deepEqual(JSON.parse(fitStorage.get("cj_widget_toastsize")),{width:736,height:179});
+assert.deepEqual(JSON.parse(fitStorage.get("cj_widget_toastsize")),{width:738,height:179});
 fitStorage.set("cj_widget_toastsize",'{"width":0,"height":"invalid"}');
 await fitWindow.__cjPlay(0,0);
-assert.deepEqual({...fitSize},{width:624,height:139});
+assert.deepEqual({...fitSize},{width:626,height:139});
 const toastConfig=JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json",import.meta.url),"utf8")).app.windows.find(w=>w.label==="toast");
 assert.equal(toastConfig.resizable,true);
 assert.equal(toastConfig.minWidth,240);
 assert.equal(toastConfig.minHeight,54);
-console.log("PASS: separate toast size, pointer/keyboard resize, restart, invalid-size fallback and main-size isolation");
+assert.equal(toast.match(/id="cjToastResize"[^>]*>([^<]*)</)[1],"");
+assert(/scrollbar-width:none/.test(toast));
+console.log("PASS: initial unwrapped size, hidden scrollbar/icon, separate pointer/keyboard resize, restart and main-size isolation");
 
 // Run the actual checkbox loading/saving path, including legacy defaults and restart.
 const opacityCode=source.slice(source.indexOf('let ui='),source.indexOf('/* --- 투명도:'))
