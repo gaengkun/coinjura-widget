@@ -210,6 +210,7 @@ console.log("PASS: numeric duration, validation, defaults, persistence and nativ
 
 // The exchange badge is separate from the configurable coin columns.
 const toast=readFileSync(new URL("../src/toast.html",import.meta.url),"utf8");
+assert(/<meta charset="UTF-8">/i.test(toast));
 const toastBar={style:{},children:[],appendChild(el){this.children.push(el);}};
 let fadeScheduled=0;
 let fadeDelay=0, fadeCallback;
