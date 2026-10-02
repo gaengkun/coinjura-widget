@@ -121,6 +121,14 @@ jobs:
           test -s coinjura-widget-win-setup.exe
           test -s coinjura-widget-win.msi
           test -s coinjura-widget-win-portable.exe
+          # GitHub converts asset-name spaces to dots; hash the final names.
+          for f in *; do
+            normalized="${f// /.}"
+            if [ "$f" != "$normalized" ]; then
+              test ! -e "$normalized"
+              mv -- "$f" "$normalized"
+            fi
+          done
           sha256sum -- * > SHA256SUMS.txt
           # 모든 자산 업로드가 성공한 뒤에만 latest로 공개한다.
           gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
