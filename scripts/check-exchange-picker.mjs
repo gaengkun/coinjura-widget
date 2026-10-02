@@ -25,7 +25,7 @@ const source=readFileSync(new URL("../src/main.js",import.meta.url),"utf8");
 vm.runInContext(source.split("/* ---------- window controls (Tauri) ---------- */")[0],context);
 const run=code=>vm.runInContext(code,context);
 const value=code=>JSON.parse(JSON.stringify(run(code)));
-const click=(selector,dataset)=>element(selector).handlers.click({target:{closest:()=>({dataset})}});
+const click=(selector,dataset)=>element(selector).handlers.click({preventDefault(){},target:{closest:()=>({dataset})}});
 const exchange=ex=>element("#exChips").handlers.change({target:{value:ex}});
 
 run(`
@@ -83,18 +83,19 @@ assert.equal(run('unpick("BTC")'),false); // Keep at least one coin overall.
 run('draft=JSON.parse(JSON.stringify(cfg)); draft.coinsByEx.U.push("ETH")');
 assert(!value("cfg.coinsByEx.U").includes("ETH")); // Cancelled edits never touch saved settings.
 
-run('cfg=normCfg({coinsByEx:{U:["BTC"],B:["BTC","CAKE"]},alert:1,win:"24h"}); checkAlerts()');
+await new Promise(resolve=>setImmediate(resolve));
+run('cfg=normCfg({coinsByEx:{U:["BTC"],B:["BTC","CAKE"]},alert:1,win:"24h"}); cjHistGeneration=null');
+await run('checkAlerts()');
 assert(run('hist["BTC@U"] && hist["BTC@B"] && hist["CAKE@B"]'));
 assert.equal(run('hist["CAKE@U"]'),undefined);
 assert.equal(run('alertLine("BTC","B",-4).exchange'),"빗썸");
-assert.equal(run('steps["BTC@U@24h@1"]'),2);
-assert.equal(run('steps["BTC@B@24h@1"]'),-4);
-run('cfg._sel="B"; checkAlerts()');
+run('cfg._sel="B"');
+await run('checkAlerts()');
 assert.equal(run('hist["BTC@U"].length'),1); // Switching tabs does not duplicate samples.
 console.log("PASS: exchange selection, filtering, migration, persistence, reset, cancel and alert routing");
 
 run(`
-  cfg.win="2m";
+  cfg.alertInterval="2m";
   data.d.pU[0]=129; data.d.cU[0]=29;
   hist["BTC@U"]=[[data.t*1000-120000,124,24],[data.t*1000,129,29]];
 `);
@@ -103,7 +104,6 @@ assert.equal(run('alertLine("BTC","U").beforeChg'),"+24.00%");
 assert.equal(run('alertLine("BTC","U").changeDelta'),5);
 assert.equal(run('alertLine("BTC","U").beforeLabel'),"2분 전");
 assert.equal(run('alertLine("BTC","U").px'),"129원");
-assert(Math.abs(run('pctOver("BTC","U","2m")')-5/124*100)<1e-8);
 run('pushHist("BTC","U",129,29)');
 assert.equal(run('hist["BTC@U"].length'),2);
 run('hist["BTC@U"][0]=[data.t*1000-120000,124]');
@@ -111,8 +111,73 @@ assert.equal(run('alertLine("BTC","U").beforeChg'),"—"); // Legacy prices cann
 assert.equal(run('alertLine("BTC","U").changeDelta'),null);
 run('hist["BTC@U"][0]=[data.t*1000-600000,124,24]');
 assert.equal(run('cjAlertBaseline("BTC","U","2m")'),null);
-assert.equal(run('pctOver("BTC","U","24h")'),29);
-console.log("PASS: current exchange rate, recorded baseline, old history and unchanged trigger calculation");
+console.log("PASS: current exchange rate, recorded baseline and old history");
+
+assert.equal(run('normCfg({}).alertInterval'),"10m");
+assert.equal(run('normCfg({alert:0,win:"2m",sound:true}).alertInterval'),"off");
+assert.equal(run('normCfg({alert:1,win:"2m"}).alertInterval'),"2m");
+assert.equal(run('normCfg({alert:1,win:"24h"}).alertInterval'),"10m");
+assert.equal(run('normCfg({alertInterval:"30m"}).alertInterval'),"30m");
+assert.equal(run('normCfg({alertInterval:"invalid"}).alertInterval'),"10m");
+assert(!run('"sound" in normCfg({sound:true})'));
+assert(!run('"alert" in normCfg({alert:1})'));
+assert(!run('"win" in normCfg({win:"2m"})'));
+run('draft.alertInterval="30m"; renderWinChips()');
+assert.equal((element("#winChips").innerHTML.match(/ checked/g)||[]).length,1);
+assert(element("#winChips").innerHTML.includes('data-win="30m"'));
+click("#winChips",{win:"2m"});
+element("#cjAlertSeconds").value="3";
+click("#save",{});
+assert.equal(JSON.parse(storage.get("cj_widget")).alertInterval,"2m");
+assert.equal(run('loadCfg().alertInterval'),"2m");
+
+let now=Date.now(), visible=false, toasts=[], releaseToast;
+const periodicElements=new Map();
+const periodicContext=vm.createContext({
+  console,AbortController,setTimeout(){return 0;},clearTimeout(){},
+  Date:class extends Date {static now(){return now;}},
+  window:{fetch:async()=>{},__TAURI__:{core:{invoke:async(command,args)=>{
+    if(command==="show_toast") {toasts.push(args);if(releaseToast)await new Promise(resolve=>{releaseToast=resolve;});}
+  }}}},
+  appWin:()=>({isVisible:async()=>visible}),
+  document:{documentElement:{dataset:{}},querySelector:selector=>{
+    if(!periodicElements.has(selector)) periodicElements.set(selector,{...element(selector),handlers:{}});
+    return periodicElements.get(selector);
+  }},
+  localStorage:{getItem(){return null;},setItem(){}}
+});
+vm.runInContext(source.split("/* ---------- window controls (Tauri) ---------- */")[0],periodicContext);
+const periodic=code=>vm.runInContext(code,periodicContext);
+periodic(`data.d={s:["BTC","ETH"],pU:[100,10],pB:[101,11],cU:[0,0],cB:[0,0],kp:[0,0]};
+  data.idx={BTC:0,ETH:1}; cfg=normCfg({coinsByEx:{U:["BTC"],B:["ETH"]},alertInterval:"2m"});
+  cjAlertNextAt=Date.now()+WIN_MS[cfg.alertInterval];`);
+async function tick(){periodic('data.t=Math.floor(Date.now()/1000)');await periodic('checkAlerts()');}
+await tick(); assert.equal(toasts.length,0);
+now+=119999;await tick();assert.equal(toasts.length,0);
+now++;await tick();assert.equal(toasts.length,1);
+assert.deepEqual(Array.from(toasts[0].lines,line=>line.sym+"@"+line.exchange),["BTC@업비트","ETH@빗썸"]);
+await tick();assert.equal(toasts.length,1); // Same deadline never duplicates.
+now+=120000;await tick();assert.equal(toasts.length,2); // Unchanged prices still notify.
+visible=true;now+=120000;await tick();assert.equal(toasts.length,2);
+visible=false;await tick();assert.equal(toasts.length,2);
+now+=120000;await tick();assert.equal(toasts.length,3);
+periodic('cfg.alertInterval="off"');now+=3600000;await tick();assert.equal(toasts.length,3);
+periodic('cfg.alertInterval="10m";cjAlertNextAt=Date.now()+WIN_MS[cfg.alertInterval]');
+now+=600000;periodic('data.t=Math.floor(Date.now()/1000)-301');await periodic('checkAlerts()');
+assert.equal(toasts.length,3); // Stale data never notifies.
+await tick();assert.equal(toasts.length,3); // No immediate catch-up after recovery.
+now+=600000;periodic('loadFailed=true');await tick();assert.equal(toasts.length,3);
+periodic('loadFailed=false');now+=3600000;await tick();assert.equal(toasts.length,4); // Resume emits once.
+await tick();assert.equal(toasts.length,4);
+releaseToast=true;now+=600000;
+const pending=tick();await new Promise(resolve=>setImmediate(resolve));
+await tick();assert.equal(toasts.length,5); // Concurrent load/timer/close calls share one notification.
+releaseToast();await pending;releaseToast=null;
+const settingsHtml=readFileSync(new URL("../src/index.html",import.meta.url),"utf8");
+assert(settingsHtml.includes("정기 시세 알림"));
+assert(!settingsHtml.includes('id="soundChk"')&&!settingsHtml.includes('id="alertChips"'));
+assert(!source.includes('AudioContext')&&!source.includes('pctOver('));
+console.log("PASS: periodic intervals, default/migration/persistence, hidden-only grouped quotes, unchanged prices, no duplicates, stale/off/recovery/resume and silent UI");
 
 assert.equal(run('normCfg({}).alertSeconds'),3);
 for(const invalid of [0,-1,1.5,86401,"",null,"abc","1e2"]){

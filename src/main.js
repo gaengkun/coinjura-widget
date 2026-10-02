@@ -65,11 +65,10 @@ const COLS=[["tkr","티커"],["name","코인명"],["price","시세"],["chg","변
 
 // ---- default settings ----
 const DEFAULT={ ex:["U"], cols:["tkr","name","price","chg","kimp"], coins:["BTC","ETH","XRP","SOL","ADA"],
-                alert:0, win:"10m", sound:false, alertSeconds:3,
+                alertInterval:"10m", alertSeconds:3,
                 acols:["tkr","name","price","chg"] };   // 알림 창에 띄울 항목
-// 단위 = 발동 임계값이자 갱신 단위. 2% 선택 시 2,4,6,8…에서 표시가 바뀐다.
-const ALERTS=[[0,"끄기"],[1,"1%"],[2,"2%"],[3,"3%"],[4,"4%"],[5,"5%"]];
-const WINS=[["2m","2분"],["10m","10분"],["1h","1시간"],["24h","24시간"]];
+const WINS=[["off","끄기"],["2m","2분"],["10m","10분"],["30m","30분"],["1h","1시간"]];
+const WIN_MS={"2m":120000,"10m":600000,"30m":1800000,"1h":3600000};
 /**
  * 목록 설정을 정해진 값만 남기고 순서대로 정리한다. 결과가 비면 기본값으로 되돌린다.
  *
@@ -87,6 +86,10 @@ function cjAlertSeconds(value){
   return /^\d+$/.test(String(value)) && Number(value)>=1 && Number(value)<=86400 ? Number(value) : null;
 }
 function normCfg(c){
+  // 구버전에서 꺼 둔 알림은 유지하고, 켜 둔 알림의 기준 시간을 간격으로 이관한다.
+  if(c.alertInterval===undefined) c.alertInterval=c.alert===0?"off":WIN_MS[c.win]?c.win:DEFAULT.alertInterval;
+  if(!WINS.some(([v])=>v===c.alertInterval)) c.alertInterval=DEFAULT.alertInterval;
+  delete c.alert; delete c.win; delete c.sound;
   c.alertSeconds=cjAlertSeconds(c.alertSeconds)??DEFAULT.alertSeconds;
   c.cols  = keepSome(c.cols,  COL_KEYS, DEFAULT.cols);
   c.acols = keepSome(c.acols, COL_KEYS, DEFAULT.acols);
@@ -244,11 +247,7 @@ function fmtPx(v,cur){
 function cls(v){ return v>0?"up":v<0?"down":"flat"; }
 function chgTxt(v){ if(v==null)return"—"; return (v>0?"+":"")+v.toFixed(2)+"%"; }
 
-/* ---------- 급등락 표시 (트레이) ----------
-   API가 과거 시세를 주지 않아(현재 스냅샷 + c24만 제공) 15분·1시간 기준은
-   2분 폴링으로 직접 히스토리를 쌓아 계산한다. localStorage에 저장해 재시작을 견딘다.
-   히스토리가 부족하면 표시하지 않는다(24시간 기준은 c24를 그대로 사용). */
-const WIN_MS={"2m":12e4,"10m":6e5,"1h":36e5,"24h":864e5};
+/* ---------- 정기 시세 알림 ---------- */
 const HIST_KEEP=75*60*1000;     // 1시간 창 + 여유
 // 붙는 거리(SNAP_IN)보다 떨어지는 거리(SNAP_OUT)를 크게 둔다.
 // 두 값이 같으면 가장자리에서 붙었다 떨어졌다를 반복해 벽에 들러붙는 느낌이 난다.
@@ -256,8 +255,6 @@ const SNAP_IN=12, SNAP_OUT=44, PUSH_PX=44, PEEK_PX=28;
 
 let hist={};
 try{ hist=JSON.parse(localStorage.getItem("cj_widget_hist"))||{}; }catch(e){}
-let steps={};
-try{ steps=JSON.parse(localStorage.getItem("cj_widget_steps"))||{}; }catch(e){}
 
 /**
  * 표본 기록. 시각은 벽시계가 아니라 **데이터 생성 시각**(d.t)을 쓴다.
@@ -289,11 +286,6 @@ function cjAlertBaseline(sym,ex,win){
   // 도착한 만큼(현재 10분 주기) 목표가 앞당겨져 바로 직전 표본이 잡히고
   // 자기 자신과 비교해 0.00% 가 나온다.
   const nowTs=data.t?data.t*1000:Date.now();
-  // 24h 알림은 거래소 제공 값이다. 비교는 직전 수신 기록이며 24시간 전으로 표시하지 않는다.
-  if(win==="24h"){
-    for(let i=a.length-1;i>=0;i--) if(a[i][0]<nowTs) return a[i];
-    return null;
-  }
   const target=nowTs-WIN_MS[win];
   let best=null,bd=Infinity;
   for(const sample of a){ const d=Math.abs(sample[0]-target); if(d<bd){bd=d;best=sample;} }
@@ -302,39 +294,7 @@ function cjAlertBaseline(sym,ex,win){
   if(best==null||!best[1]||bd>Math.max(6e4,WIN_MS[win]*0.35)) return null;
   return best;
 }
-// 창 기준 가격 변동률. 알림 발동 계산은 기존 기준을 유지한다.
-function pctOver(sym,ex,win){
-  const q=quote(sym,ex); if(!q) return null;
-  if(win==="24h") return q.c24;
-  const base=cjAlertBaseline(sym,ex,win); if(!base) return null;
-  return (q.price-base[1])/base[1]*100;
-}
-// 단위 내림 + 데드밴드(경계에서 표시가 깜빡이는 것 방지)
-function stepOf(pct,unit,prev){
-  const s=Math.floor(Math.abs(pct)/unit)*(pct<0?-1:1);
-  if(prev==null) return s;
-  if(Math.abs(s)>Math.abs(prev)||Math.sign(s)!==Math.sign(prev)) return s;
-  // 내려갈 때는 단위의 30%만큼 더 떨어져야 강등
-  const hold=(Math.abs(prev)*unit)-unit*0.3;
-  return Math.abs(pct)>=hold?prev:s;
-}
-let beepCtx=null;
-// soundOn 을 주면 그 값을 따른다. 설정 화면에서 저장 전 상태로 시험할 때 쓴다.
-function beep(soundOn){
-  if(!(soundOn===undefined ? cfg.sound : soundOn)) return;
-  try{
-    beepCtx=beepCtx||new (window.AudioContext||window.webkitAudioContext)();
-    const o=beepCtx.createOscillator(), g=beepCtx.createGain(), t=beepCtx.currentTime;
-    o.frequency.value=880; o.type="sine";
-    g.gain.setValueAtTime(.0001,t);
-    g.gain.exponentialRampToValueAtTime(.12,t+.01);
-    g.gain.exponentialRampToValueAtTime(.0001,t+.09);   // 약 90ms, 짧게
-    o.connect(g); g.connect(beepCtx.destination); o.start(t); o.stop(t+.1);
-  }catch(e){}
-}
-/* --- 급변동 알림 ---
-   위젯이 보이는 중에는 시세와 변동률이 이미 화면에 있으므로 따로 알리지 않는다.
-   숨겨져 있을 때만, 위젯이 있던 자리에 알림 창을 잠깐 띄운다. */
+// 위젯이 숨겨져 있을 때만 선택한 시세를 한 알림 창에 모아 보여준다.
 async function floatToast(lines){
   if(!IS_APP||!T.core||!lines||!lines.length) return;
   const cols=(cfg.acols&&cfg.acols.length)?cfg.acols:["tkr","chg"];
@@ -350,7 +310,7 @@ async function floatToast(lines){
 /** 큰 변동률은 거래소의 현재 값, 비교 값은 실제 수신한 이전 기록이다. */
 function alertLine(sym,ex){
   const q=quote(sym,ex), kp=kimp(sym,ex);
-  const base=cjAlertBaseline(sym,ex,cfg.win||"1h");
+  const base=cjAlertBaseline(sym,ex,cfg.alertInterval);
   const minutes=base?Math.max(1,Math.round((data.t*1000-base[0])/60000)):null;
   const beforeRate=Number.isFinite(base?.[2])?base[2]:null;
   const changeDelta=beforeRate!==null && Number.isFinite(q?.c24)?Math.round((q.c24-beforeRate)*100)/100:null;
@@ -362,72 +322,38 @@ function alertLine(sym,ex){
            kimp:kimpTxt(kp),  kimpCls:cls(kp) };
 }
 
-let alertedGenerations={};
-try{
-  const saved=JSON.parse(localStorage.getItem("cj_widget_alerted_generations"));
-  if(saved && typeof saved==="object" && !Array.isArray(saved)) alertedGenerations=saved;
-}catch(e){}
-
+let cjAlertNextAt=Date.now()+(WIN_MS[cfg.alertInterval]||0);
+let cjAlertBusy=false, cjHistGeneration=null;
 async function checkAlerts(){
-  if(loadFailed||staleData()){ setTray(""); return; }
-  const unit=cfg.alert||0;
-  // 등록한 거래소·코인 조합을 감시한다. 보고 있는 탭은 감시에 영향을 주지 않는다.
-  const watched=cfg.ex.flatMap(ex=>cjCoinsFor(cfg,ex).map(sym=>({sym,ex})));
-  for(const {sym,ex} of watched){
-    const q=quote(sym,ex); if(q) pushHist(sym,ex,q.price,q.c24);
-  }
-  saveHist();
-  if(!unit){ setTray(""); return; }
-
-  const win=cfg.win||"1h";
-  /**
-   * 2분 창은 데이터 주기와 같아서 갱신마다 **겹치지 않는 새 구간**이 된다.
-   * 직전 2분에 임계값을 넘었으면 그 자체로 별개 사건이므로 매번 알린다.
-   *
-   * 단계 비교(더 큰 단계로 올라갈 때만 울림)는 24시간처럼 누적되는 값에서
-   * 같은 소식을 반복하지 않으려던 장치다. 2분 창에 그대로 쓰면 1.2% 뛴 다음
-   * 2분에 또 1.1% 뛰어도 같은 단계라 삼켜버린다.
-   * 10분·1시간 창은 구간이 겹치므로 단계 비교를 그대로 둔다.
-   */
-  const fresh=(win==="2m");
-  const hits=[]; let rang=false, dirty=false, generationsDirty=false;
-  for(const {sym,ex} of watched){
-    const pct=pctOver(sym,ex,win);
-    if(pct==null) continue;
-    const key=sym+"@"+ex+"@"+win+"@"+unit;
-    const prev=steps[key]==null?null:steps[key];
-    const s=stepOf(pct,unit,prev);
-    if(s!==prev){ steps[key]=s; dirty=true; }
-    if(fresh){
-      if(Math.abs(pct)>=unit){
-        const generationKey=sym+"@"+ex;
-        if(!(alertedGenerations[generationKey]>=data.t)){
-          alertedGenerations[generationKey]=data.t;
-          generationsDirty=true; rang=true;
-        }
-        hits.push({sym,ex,s,pct,shown:Math.floor(Math.abs(pct)/unit)*unit});
-      }
-    }else{
-      if(s!==prev && Math.abs(s)>Math.abs(prev||0)) rang=true;
-      if(Math.abs(s)>=1) hits.push({sym,ex,s,pct,shown:Math.abs(s)*unit});
+  if(cjAlertBusy) return;
+  cjAlertBusy=true;
+  try{
+    const interval=WIN_MS[cfg.alertInterval]||0, now=Date.now();
+    if(loadFailed||staleData()){
+      cjAlertNextAt=now+interval; await setTray(""); return;
     }
-  }
-  if(dirty){ try{ localStorage.setItem("cj_widget_steps",JSON.stringify(steps)); }catch(e){} }
-  if(generationsDirty){
-    try{ localStorage.setItem("cj_widget_alerted_generations",JSON.stringify(alertedGenerations)); }catch(e){}
-  }
-
-  hits.sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct));
-  // 여러 개면 두 개까지만 — 길어지면 눈에 띈다
-  // 트레이 제목은 폭이 좁아 두 개까지만. 토스트는 걸린 만큼 다 보여준다.
-  const trayTxt=hits.slice(0,2).map(h=>`${h.sym}(${EX_SHORT[h.ex]}) ${h.s>0?"▲":"▼"}${h.shown}%`).join("  ")
-          + (hits.length>2?`  +${hits.length-2}`:"");
-  const lines=hits.map(h=>alertLine(h.sym,h.ex));
-  setTray(hits.length?trayTxt:"");
-  if(rang&&hits.length){
-    let vis=true; try{ vis=await appWin().isVisible(); }catch(e){}
-    if(!vis){ beep(); floatToast(lines); }    // 숨겨져 있을 때만 알린다
-  }
+    const watched=cfg.ex.flatMap(ex=>cjCoinsFor(cfg,ex).map(sym=>({sym,ex})));
+    // 같은 데이터는 15초 타이머에서 다시 기록하거나 저장하지 않는다.
+    if(cjHistGeneration!==data.t){
+      for(const {sym,ex} of watched){
+        const q=quote(sym,ex); if(q) pushHist(sym,ex,q.price,q.c24);
+      }
+      saveHist(); cjHistGeneration=data.t;
+    }
+    if(!interval||!IS_APP||!T.core||await appWin().isVisible()){
+      cjAlertNextAt=now+interval; await setTray(""); return;
+    }
+    if(now<cjAlertNextAt) return;
+    // 절전 후 밀린 알림은 한 번만 표시한다. 비동기 호출 중에도 중복되지 않는다.
+    cjAlertNextAt=now+interval;
+    const lines=watched.map(({sym,ex})=>alertLine(sym,ex));
+    await floatToast(lines);
+    await setTray(lines.slice(0,2).map(line=>line.sym+"("+line.exchangeShort+") "+line.chg).join("  ")
+      +(lines.length>2?"  +"+(lines.length-2):""));
+  }catch(e){
+    // 창 상태를 확인하지 못하면 알림을 띄우지 않고 다음 간격에 재시도한다.
+    cjAlertNextAt=Date.now()+(WIN_MS[cfg.alertInterval]||0);
+  }finally{ cjAlertBusy=false; }
 }
 async function setTray(text){
   if(!IS_APP||!T.core) return;
@@ -506,14 +432,11 @@ function renderAlertChips(){
     const on=(draft.acols||[]).includes(k);
     return `<label class="chip ${on?"on":""}" data-acol="${k}"><input type="checkbox" ${on?"checked":""}>${label}</label>`;
   }).join("");
-  $("#alertChips").innerHTML=ALERTS.map(([v,label])=>{
-    const on=(draft.alert||0)===v;
-    return `<label class="chip ${on?"on":""}" data-al="${v}"><input type="checkbox" ${on?"checked":""}>${label}</label>`;
-  }).join("");
 }
+
 function renderWinChips(){
   $("#winChips").innerHTML=WINS.map(([v,label])=>{
-    const on=(draft.win||"1h")===v;
+    const on=draft.alertInterval===v;
     return `<label class="chip ${on?"on":""}" data-win="${v}"><input type="checkbox" ${on?"checked":""}>${label}</label>`;
   }).join("");
 }
@@ -577,7 +500,6 @@ function openSettings(){
   draft=JSON.parse(JSON.stringify(cfg));
   cjPickerEx=activeEx()||cfg.ex[0];
   renderExChips(); renderColChips(); renderAlertChips(); renderWinChips(); renderPicker();
-  $("#soundChk").checked=!!draft.sound;
   $("#cjAlertSeconds").value=draft.alertSeconds;
   $("#cjAlertSeconds").setCustomValidity("");
   syncWinControls();
@@ -613,15 +535,10 @@ $("#acolChips").addEventListener("click",e=>{
   if(i>=0){ if(a.length>1) a.splice(i,1); } else a.push(k);   // 최소 한 개는 남긴다
   renderAlertChips();
 });
-$("#alertChips").addEventListener("click",e=>{
-  const l=e.target.closest(".chip"); if(!l)return; e.preventDefault();
-  draft.alert=+l.dataset.al; renderAlertChips();
-});
 $("#winChips").addEventListener("click",e=>{
   const l=e.target.closest(".chip"); if(!l)return; e.preventDefault();
-  draft.win=l.dataset.win; renderWinChips();
+  draft.alertInterval=l.dataset.win; renderWinChips();
 });
-$("#soundChk").addEventListener("change",e=>{ draft.sound=e.target.checked; });
 $("#cjAlertSeconds").addEventListener("input",e=>{
   e.target.value=e.target.value.replace(/\D/g,"");
   e.target.setCustomValidity("");
@@ -671,8 +588,9 @@ $("#save").addEventListener("click",()=>{
   draft.alertSeconds=seconds;
   // cols는 COLS 정의 순서로 정렬해 저장
   normCfg(draft);   // 순서 정리 + 빈 값 방지
-  cfg=JSON.parse(JSON.stringify(draft)); cfg._sel=cjPickerEx; cfg.alert=draft.alert||0;
-  cfg.win=draft.win||"1h"; cfg.sound=!!draft.sound;
+  if(cfg.alertInterval!==draft.alertInterval) cjAlertNextAt=Date.now()+(WIN_MS[draft.alertInterval]||0);
+  cfg=JSON.parse(JSON.stringify(draft)); cfg._sel=cjPickerEx;
+  cjHistGeneration=null;
   cfg.acols=(draft.acols&&draft.acols.length)?draft.acols.slice():["tkr","chg"];
   saveCfg(cfg); render(); checkAlerts(); closeSettings();
 });
@@ -1044,4 +962,4 @@ function scheduleLoad(){
   setTimeout(async()=>{ await load(); scheduleLoad(); }, wait);
 }
 void load().finally(scheduleLoad);
-setInterval(()=>{ showAge(); if(loadFailed||staleData()) setTray(""); },15000);
+setInterval(()=>{ showAge(); void checkAlerts(); },15000);
