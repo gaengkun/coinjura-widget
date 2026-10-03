@@ -46,6 +46,33 @@ assert.deepEqual(value("loadCfg().coinsByEx"),{U:["JUP","STX"],B:[],BN:["JUP","S
 storage.clear();
 console.log("PASS: update selection retention, coin order, exchange routing and legacy migration");
 
+const updateCode=source.match(/^const SITE_DL=.*$/m)[0]+"\n"
+  +source.slice(source.indexOf("let appVer=null;"),source.indexOf("// 창 크기는 시세 설정"));
+for(const route of ["opener","invoke","browser"]){
+  const opened=[], buttons=new Map();
+  const button=selector=>{
+    if(!buttons.has(selector)) buttons.set(selector,{hidden:false,dataset:{},handlers:{},
+      addEventListener(type,handler){this.handlers[type]=handler;}});
+    return buttons.get(selector);
+  };
+  const bridge={app:{getVersion:async()=>"0.7.17"},core:{invoke:async(command,args)=>{
+    assert.equal(command,"plugin:opener|open_url");opened.push(args.url);
+  }}};
+  if(route==="opener") bridge.opener={openUrl:async url=>opened.push(url)};
+  const updateContext=vm.createContext({IS_APP:route!=="browser",T:route==="browser"?null:bridge,
+    $:button,data:{d:{app:{v:"0.7.18",url:"https://apps.microsoft.com/detail/9PFZK8Q5G2QM"}}},
+    window:{open(url,target){assert.equal(target,"_blank");opened.push(url);}}});
+  vm.runInContext(updateCode,updateContext);
+  await vm.runInContext("checkUpdate()",updateContext);
+  assert.equal(button("#updBtn").hidden,route==="browser");
+  await button("#updBtn").handlers.click();
+  assert.deepEqual(opened,["https://coinjura.com/sub/widget.php"]);
+  vm.runInContext('data.d.app.v="0.7.17"',updateContext);
+  await vm.runInContext("checkUpdate()",updateContext);
+  assert.equal(button("#updBtn").hidden,true);
+}
+console.log("PASS: update button opens Coinjura via native/browser routes and keeps version checks");
+
 run(`
   data.t=Math.floor(Date.now()/1000);
   data.d={s:["BTC","ETH","CAKE"],pU:[100,10,0],pB:[101,11,2],pBN:[1,0.1,0.02],pBY:[1,0.1,0.02],

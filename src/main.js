@@ -10,7 +10,7 @@ const API="https://coinjura.com/theme/basic/live/widget-v1.js";
 // 한글명은 거의 안 바뀌므로 따로 받아 캐시한다(1시간마다 확인).
 const API_NAMES="https://coinjura.com/theme/basic/live/widget-names.js";
 const SITE="https://coinjura.com/";
-const SITE_DL="https://coinjura.com/sub/widget.php";   // 서버가 주소를 알려주기 전까지 쓸 기본값
+const SITE_DL="https://coinjura.com/sub/widget.php";   // 업데이트 안내 및 다운로드 페이지
 const NAMES_TTL=3600000;
 // 서버 데이터가 2분마다 바뀐다. 같은 2분으로 받으면 박자가 어긋날 때 한 세대를
 // 통째로 건너뛰어 2분 창이 계산되지 않는다. 절반 주기로 받아 매 세대를 잡는다.
@@ -778,8 +778,8 @@ window.addEventListener("mouseup",()=>{
 /* --- 새 버전 안내 ---
    자동 설치 대신 코인주라 다운로드 페이지로 보낸다. 서명·키가 필요 없고,
    받으러 오는 길에 사이트를 한 번 거치게 된다.
-   비교할 최신 버전과 이동 주소는 서버(widget-v1.js 의 app 필드)가 정한다 —
-   앱을 다시 배포하지 않고도 주소를 바꿀 수 있어야 하기 때문이다. */
+   비교할 최신 버전은 서버(widget-v1.js 의 app 필드)가 정하고,
+   업데이트 버튼은 설치 경로에 관계없이 코인주라 위젯 페이지를 연다. */
 let appVer=null;
 async function myVersion(){
   if(appVer!==null) return appVer;
@@ -807,15 +807,7 @@ async function checkUpdate(){
   btn.hidden=!need;
   if(need) btn.dataset.tip=`새 버전 ${info.v} 받기 (현재 ${mine})`;
 }
-$("#updBtn").addEventListener("click",async()=>{
-  try{
-    if(IS_APP && await T.core.invoke("cj_is_store")){
-      await openSite("https://apps.microsoft.com/detail/9PFZK8Q5G2QM");
-      return;
-    }
-  }catch(e){ return; }
-  openSite(((data.d&&data.d.app)||{}).url||SITE_DL);
-});
+$("#updBtn").addEventListener("click",()=>openSite(SITE_DL));
 
 /* --- 사이트이동 --- 기본 브라우저에서 코인주라를 새로 연다.
    버튼은 타이틀바 드래그 대상에서 빠져 있어서 창 옮기기와 부딪히지 않는다. */
