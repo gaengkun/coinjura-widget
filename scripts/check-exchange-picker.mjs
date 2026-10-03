@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import vm from "node:vm";
+await import("./check-toast-dismiss.mjs");
 
 const elements=new Map(), storage=new Map();
 function element(selector){

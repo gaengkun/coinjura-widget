@@ -21,6 +21,9 @@ fn show_toast(
     pos: Option<(f64, f64)>,
     duration_seconds: Option<u32>,
 ) {
+    if cj_hide_toast_if_main_visible(&app) {
+        return;
+    }
     let Some(w) = app.get_webview_window("toast") else {
         return;
     };
@@ -91,6 +94,10 @@ fn show_toast(
     // 눌러서 닫을 수 있어야 하므로 클릭을 통과시키지 않는다.
     let _ = w.set_ignore_cursor_events(false);
     let _ = w.show();
+    // 시세창을 여는 동안 이미 요청된 알림도 다시 남지 않도록 확인한다.
+    if cj_hide_toast_if_main_visible(&app) {
+        return;
+    }
     // 창이 숨어 있는 동안에는 화면이 안 그려져 전환이 시작되지 않는다.
     // 그래서 내용 채우기와 연출 시작을 나눠, 띄운 뒤에 연출을 건다.
     let _ = w.eval(&format!("window.__cjPlay && window.__cjPlay({}, {})", x, y));
@@ -193,6 +200,7 @@ fn toggle_window(app: &tauri::AppHandle) {
         } else {
             ensure_on_screen(&w);
             let _ = w.show();
+            cj_hide_toast_if_main_visible(app);
             let _ = w.set_focus();
         }
     }
@@ -208,6 +216,7 @@ fn toggle_window_quiet(app: &tauri::AppHandle) {
         } else {
             ensure_on_screen(&w);
             let _ = w.show();
+            cj_hide_toast_if_main_visible(app);
             // set_focus 하지 않음 — 사용 중인 프로그램의 포커스 유지
         }
     }
@@ -241,6 +250,16 @@ fn hide_toast(app: tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("toast") {
         let _ = w.hide();
     }
+}
+
+/// 시세창을 다시 보여 주면 알림과 남은 숨김 타이머를 함께 취소한다.
+fn cj_hide_toast_if_main_visible(app: &tauri::AppHandle) -> bool {
+    let visible = app.get_webview_window("main")
+        .is_some_and(|w| w.is_visible().unwrap_or(false));
+    if visible {
+        hide_toast(app.clone());
+    }
+    visible
 }
 
 #[tauri::command]
@@ -287,6 +306,7 @@ pub fn run() {
                     "center" => {
                         if let Some(w) = app.get_webview_window("main") {
                             let _ = w.show();
+                            cj_hide_toast_if_main_visible(app);
                             let _ = w.center();
                             let _ = w.set_focus();
                             let _ = w.emit("cj://recover", ());
@@ -343,6 +363,7 @@ pub fn run() {
                         ensure_on_screen(&w);
                         let _ = w.show();
                     }
+                    cj_hide_toast_if_main_visible(_app);
                     let _ = w.set_focus();
                 }
             }
