@@ -29,6 +29,23 @@ const value=code=>JSON.parse(JSON.stringify(run(code)));
 const click=(selector,dataset)=>element(selector).handlers.click({preventDefault(){},target:{closest:()=>({dataset})}});
 const exchange=ex=>element("#exChips").handlers.change({target:{value:ex}});
 
+// Updates reuse the same stored selection, including per-exchange-only settings.
+const selectedCoins={U:["STX","JUP","BTC","ETH","SOL"],B:["XRP"],BN:[],BY:[]};
+for(const saved of [
+  {ex:["U","B"],coins:["STX","JUP","BTC","ETH","SOL","XRP"],coinsByEx:selectedCoins},
+  {coinsByEx:selectedCoins}
+]){
+  storage.set("cj_widget",JSON.stringify({...saved,alertInterval:"2m"}));
+  assert.deepEqual(value("loadCfg().coinsByEx"),selectedCoins);
+  assert.equal(run("loadCfg().alertInterval"),"2m");
+  run("saveCfg(loadCfg())");
+  assert.deepEqual(value("loadCfg().coinsByEx"),selectedCoins); // Save and restart.
+}
+storage.set("cj_widget",JSON.stringify({ex:["KR","GL"],coins:["JUP","STX"]}));
+assert.deepEqual(value("loadCfg().coinsByEx"),{U:["JUP","STX"],B:[],BN:["JUP","STX"],BY:[]});
+storage.clear();
+console.log("PASS: update selection retention, coin order, exchange routing and legacy migration");
+
 run(`
   data.t=Math.floor(Date.now()/1000);
   data.d={s:["BTC","ETH","CAKE"],pU:[100,10,0],pB:[101,11,2],pBN:[1,0.1,0.02],pBY:[1,0.1,0.02],

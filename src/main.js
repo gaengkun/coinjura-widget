@@ -110,7 +110,9 @@ function normCfg(c){
 function loadCfg(){
   try{
     const c=JSON.parse(localStorage.getItem("cj_widget"));
-    if(c&&c.coins){
+    // 거래소별 목록만 저장된 설정도 복원한다. 공통 목록은 normCfg에서 재구성한다.
+    if(c && typeof c==="object" && !Array.isArray(c) && (Array.isArray(c.coins)
+      || (c.coinsByEx && typeof c.coinsByEx==="object" && !Array.isArray(c.coinsByEx)))){
       // 국내/해외 2종을 쓰던 설정 → 거래소 4종으로 되돌린다
       if(Array.isArray(c.ex) && c.ex.some(e=>EX_MIGRATE[e])){
         c.ex=[...new Set(c.ex.map(e=>EX_MIGRATE[e]||e))].filter(e=>EX_NAME[e]);
