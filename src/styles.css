@@ -17,7 +17,7 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{background:transparent;color:var(--tx);font-family:var(--sans);font-size:12px;-webkit-font-smoothing:antialiased}
-  body{width:100%;margin:0;padding:0;overflow:hidden}
+  body{width:100%;margin:0;padding:4px;overflow:hidden}
   button{font-family:var(--sans);cursor:pointer}
 
   /* ===== app shell (frameless window) ===== */
@@ -25,7 +25,8 @@
      입력란에서만 선택을 되살린다 */
   .app{user-select:none;-webkit-user-select:none;
     background:var(--bg);border:1px solid var(--line);border-radius:11px;overflow:hidden;
-    height:100vh;display:flex;flex-direction:column;opacity:var(--opa,1);position:relative}
+    height:calc(100vh - 8px);display:flex;flex-direction:column;opacity:var(--opa,1);position:relative;
+    box-shadow:0 2px 4px -1px rgba(0,0,0,.18)}
 
   /* 테두리 없는 창이라 리사이즈 핸들을 직접 만든다 (윈도우는 이게 없으면 크기 조절 불가) */
   .rz{position:absolute;z-index:20}
