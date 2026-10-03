@@ -43,8 +43,43 @@ for(const saved of [
 }
 storage.set("cj_widget",JSON.stringify({ex:["KR","GL"],coins:["JUP","STX"]}));
 assert.deepEqual(value("loadCfg().coinsByEx"),{U:["JUP","STX"],B:[],BN:["JUP","STX"],BY:[]});
+// A partial selection must not reset otherwise valid saved preferences.
+const quotePreferences={cols:["name","price","kimp"],acols:["tkr","price"],alertInterval:"30m",alertSeconds:17};
+for(const selection of [{coinsByEx:selectedCoins},{}]){
+  storage.set("cj_widget",JSON.stringify({...selection,...quotePreferences}));
+  for(let restart=0;restart<2;restart++){
+    const restored=value("loadCfg()");
+    for(const [key,expected] of Object.entries(quotePreferences)) assert.deepEqual(restored[key],expected);
+    run("saveCfg(loadCfg())");
+  }
+}
+const windowPreferences={opa:63,toastOpa:false,layer:"bottom",snap:false,hotkey:"Control+Alt+W",
+  pos:{x:850,y:164},size:{width:620,height:360},theme:"light"};
+const toastPreferences={cj_widget_toastpos:{x:720,y:500},cj_widget_toastsize:{width:580,height:170,layout:1}};
+storage.set("cj_widget_ui",JSON.stringify(windowPreferences));
+for(const [key,prefs] of Object.entries(toastPreferences)) storage.set(key,JSON.stringify(prefs));
+const uiLoadCode=source.slice(source.indexOf("let ui="),source.indexOf("/* --- 투명도:"));
+for(let restart=0;restart<2;restart++){
+  const restored=JSON.parse(vm.runInNewContext(uiLoadCode+'\nsaveUi();JSON.stringify(ui)',{T:null,localStorage:context.localStorage}));
+  assert.deepEqual(restored,windowPreferences);
+  for(const [key,prefs] of Object.entries(toastPreferences)) assert.deepEqual(JSON.parse(storage.get(key)),prefs);
+}
 storage.clear();
 console.log("PASS: update selection retention, coin order, exchange routing and legacy migration");
+console.log("PASS: saved quote/alert preferences, window appearance/layer/hotkey/geometry and independent toast geometry");
+
+const autostartCode=source.slice(source.indexOf("let cjAutostartBusy="),source.indexOf('$("#cjAutostart").addEventListener'));
+for(const enabled of [false,true]){
+  const calls=[];
+  const autostartContext=vm.createContext({IS_APP:true,$:element,T:{core:{invoke:async(command,args)=>{
+    calls.push({command,args});return enabled;
+  }}}});
+  vm.runInContext(autostartCode,autostartContext);
+  await vm.runInContext("cjSyncAutostart()",autostartContext);
+  assert.equal(element("#cjAutostart").checked,enabled);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)),[{command:"cj_autostart",args:{enabled:null}}]);
+}
+console.log("PASS: autostart reads the existing OS preference without enabling or disabling it");
 
 const updateCode=source.match(/^const SITE_DL=.*$/m)[0]+"\n"
   +source.slice(source.indexOf("let appVer=null;"),source.indexOf("// 창 크기는 시세 설정"));
